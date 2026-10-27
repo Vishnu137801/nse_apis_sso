@@ -1,0 +1,14 @@
+.env
+test_db.py
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+
+# Local isolated test dependencies
+.testdeps/
