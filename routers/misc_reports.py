@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
 from http_client import get_nse_client
 import logging
+import time
 
 from auth.nse_auth import get_auth_headers
 from config import settings
@@ -65,6 +67,9 @@ NSE_SWP_CAN_REPORT_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/reports/SWP_
 NSE_SWP_INST_DUE_REPORT_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/reports/SWP_INST_DUE_REPORT"
 NSE_MASTER_DOWNLOAD_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/reports/MASTER_DOWNLOAD"
 NSE_CLIENT_KYC_REPORT_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/reports/CLIENT_KYC_REPORT"
+
+_MASTER_DOWNLOAD_CACHE_TTL_SECONDS = 5 * 60
+_master_download_cache: dict[str, tuple[float, bytes, str]] = {}
 
 
 async def _fetch_report(url: str, payload: dict) -> dict:
@@ -237,9 +242,8 @@ async def swp_inst_due_report(payload: SWPInstDueReportRequest):
     return await _fetch_report(NSE_SWP_INST_DUE_REPORT_URL, payload.model_dump(exclude_none=True))
 
 
-@router.post("/master-download")
-async def master_download(payload: MasterDownloadRequest):
-    logger.info(f"Sending to NSE URL: {NSE_MASTER_DOWNLOAD_URL}")
+async def _download_master(payload: MasterDownloadRequest) -> Response:
+    logger.info("Sending to NSE URL: %s", NSE_MASTER_DOWNLOAD_URL)
     try:
         async with get_nse_client(120) as client:
             response = await client.post(
@@ -259,23 +263,123 @@ async def master_download(payload: MasterDownloadRequest):
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=response.text)
 
-    content_type = response.headers.get("content-type", "")
+    content_type = response.headers.get("content-type", "").lower()
     if "application/json" in content_type:
-        return response.json()
+        try:
+            return JSONResponse(content=response.json())
+        except ValueError:
+            raise HTTPException(status_code=502, detail="NSE returned invalid JSON")
 
-    # Parse pipe-delimited plain text into list of dicts
-    text = response.text.strip()
-    lines = [line for line in text.splitlines() if line.strip()]
-    if not lines:
-        return {"file_type": payload.file_type, "records": []}
+    media_type = content_type.split(";", 1)[0].strip() or "text/plain"
+    return Response(content=response.content, media_type=media_type)
 
-    headers_row = lines[0].split("|")
-    records = []
-    for line in lines[1:]:
-        values = line.split("|")
-        records.append(dict(zip(headers_row, values)))
 
-    return {"file_type": payload.file_type, "total_records": len(records), "records": records}
+@router.post("/master-download")
+async def master_download(payload: MasterDownloadRequest):
+    logger.info("Sending to NSE URL: %s", NSE_MASTER_DOWNLOAD_URL)
+    started_at = time.perf_counter()
+    cache_key = payload.file_type.strip().upper()
+    cacheable = cache_key == "SCH"
+    if cacheable:
+        cached = _master_download_cache.get(cache_key)
+        if cached is not None:
+            expires_at, content, media_type = cached
+            if time.monotonic() < expires_at:
+                logger.info("Serving NSE master-download file_type=%s from cache", cache_key)
+                return Response(
+                    content=content,
+                    media_type=media_type,
+                    headers={"X-Master-Cache": "HIT"},
+                )
+            _master_download_cache.pop(cache_key, None)
+
+    client = get_nse_client(120)
+    try:
+        request = client.build_request(
+            "POST",
+            NSE_MASTER_DOWNLOAD_URL,
+            headers=get_auth_headers(),
+            json=payload.model_dump(),
+        )
+        response = await client.send(request, stream=True)
+    except httpx.ConnectError as e:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"Cannot connect to NSE: {e}")
+    except httpx.TimeoutException:
+        await client.aclose()
+        raise HTTPException(status_code=504, detail="NSE request timed out")
+    except Exception as e:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"NSE request failed: {e}")
+
+    logger.info(
+        "NSE master-download response headers received in %.3fs (status=%s)",
+        time.perf_counter() - started_at,
+        response.status_code,
+    )
+    if response.status_code == 403:
+        await response.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=403, detail="NSE authentication failed")
+    if response.status_code != 200:
+        try:
+            body = await response.aread()
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="NSE request timed out")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"NSE request failed: {e}")
+        finally:
+            await response.aclose()
+            await client.aclose()
+        raise HTTPException(status_code=response.status_code, detail=body.decode(errors="replace"))
+
+    content_type = response.headers.get("content-type", "").lower()
+    if "application/json" in content_type:
+        try:
+            body = await response.aread()
+            return JSONResponse(content=response.json())
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="NSE request timed out")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"NSE request failed: {e}")
+        except ValueError:
+            raise HTTPException(status_code=502, detail="NSE returned invalid JSON")
+        finally:
+            await response.aclose()
+            await client.aclose()
+
+    media_type = content_type.split(";", 1)[0].strip() or "text/plain"
+
+    async def stream_file():
+        cached_content = bytearray() if cacheable else None
+        completed = False
+        try:
+            async for chunk in response.aiter_bytes():
+                if cached_content is not None:
+                    cached_content.extend(chunk)
+                yield chunk
+            completed = True
+        except httpx.RequestError:
+            logger.exception("NSE master-download stream failed")
+            raise
+        finally:
+            if completed and cached_content is not None:
+                _master_download_cache[cache_key] = (
+                    time.monotonic() + _MASTER_DOWNLOAD_CACHE_TTL_SECONDS,
+                    bytes(cached_content),
+                    media_type,
+                )
+            try:
+                await response.aclose()
+            finally:
+                await client.aclose()
+            logger.info(
+                "NSE master-download stream closed after %.3fs",
+                time.perf_counter() - started_at,
+            )
+
+    headers = {"X-Master-Cache": "MISS"} if cacheable else None
+    return StreamingResponse(stream_file(), media_type=media_type, headers=headers)
 
 
 @router.post("/client-kyc", response_model=GenericReportResponse)
