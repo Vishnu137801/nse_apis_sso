@@ -237,7 +237,8 @@ async def swp_inst_due_report(payload: SWPInstDueReportRequest):
     return await _fetch_report(NSE_SWP_INST_DUE_REPORT_URL, payload.model_dump(exclude_none=True))
 
 
-async def _download_master(payload: MasterDownloadRequest):
+@router.post("/master-download")
+async def master_download(payload: MasterDownloadRequest):
     logger.info(f"Sending to NSE URL: {NSE_MASTER_DOWNLOAD_URL}")
     try:
         async with get_nse_client(120) as client:
@@ -253,8 +254,6 @@ async def _download_master(payload: MasterDownloadRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"NSE request failed: {e}")
 
-    logger.info(f"NSE Response status: {response.status_code}")
-
     if response.status_code == 403:
         raise HTTPException(status_code=403, detail="NSE authentication failed")
     if response.status_code != 200:
@@ -264,17 +263,19 @@ async def _download_master(payload: MasterDownloadRequest):
     if "application/json" in content_type:
         return response.json()
 
-    from fastapi.responses import Response
-    return Response(
-        content=response.content,
-        media_type="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={payload.file_type}.txt"}
-    )
+    # Parse pipe-delimited plain text into list of dicts
+    text = response.text.strip()
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return {"file_type": payload.file_type, "records": []}
 
+    headers_row = lines[0].split("|")
+    records = []
+    for line in lines[1:]:
+        values = line.split("|")
+        records.append(dict(zip(headers_row, values)))
 
-@router.post("/master-download")
-async def master_download(payload: MasterDownloadRequest):
-    return await _download_master(payload)
+    return {"file_type": payload.file_type, "total_records": len(records), "records": records}
 
 
 @router.post("/client-kyc", response_model=GenericReportResponse)

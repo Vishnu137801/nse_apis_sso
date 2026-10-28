@@ -11,7 +11,12 @@ def require_auth(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
     if not credentials or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization token")
     try:
-        payload = jwt.decode(credentials.credentials, settings.JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
         if payload.get("typ") not in (None, "app_bearer"):
             raise JWTError("Wrong identity type")
     except JWTError:

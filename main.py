@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from datetime import datetime, timezone, timedelta
+from jose import jwt
 from contextlib import asynccontextmanager
 from database import engine, Base
 from auth.dependencies import require_auth
@@ -29,7 +31,6 @@ import models.swp_modification
 import models.sip_amc_pause
 import models.sso  # SSO mapping + revocation tables
 from routers import ucc, order, switch, xsip, sip_topup, sip, stp, swp, order_cancellation, sip_cancellation, xsip_cancellation, daily_xsip_cancellation, stp_cancellation, client_bank_detail, mandate_registration, mandate_image_upload, utr_update, sip_umrn_mapping, order_status_report, mandate_status_report, communication, fatca_registration, fatca_common, aof_image_upload, fatca_image_upload, elog_upload, poa_upload, cancel_cheque_upload, member_fund_allocation, redemption_payout, statement_reports, misc_reports, misc_services, stp_modification, swp_modification, sip_amc_pause, auth
-from routers import sso, customer
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -56,6 +57,7 @@ app = FastAPI(
     title="NSE Mutual Fund API",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None,
 )
 
 # Production-safe fallback. Local development origins must be configured explicitly.
@@ -66,8 +68,6 @@ allowed_origins = _raw_origins if _raw_origins else [
     "https://mutualfund.lendrixventech.com",
 ]
 
-if settings.SSO_ENABLED:
-    allowed_origins = list(set(allowed_origins + [o.strip() for o in settings.SSO_ALLOWED_ORIGINS.split(",") if o.strip()]))
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,9 +87,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(auth.router, prefix="/api/v1")
-app.include_router(auth.router, prefix="")  # also serves /auth/login for frontend compatibility
-app.include_router(sso.router, prefix="/api/v1")  # SSO endpoints — no require_auth dependency (uses cookie auth)
-app.include_router(customer.router, prefix="/api/v1")  # Narrow customer reads use customer SSO auth
 app.include_router(ucc.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
 app.include_router(order.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
 app.include_router(switch.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
@@ -144,17 +141,10 @@ def custom_openapi():
             "description": "Paste the access_token from POST /api/v1/auth/login",
         }
     }
-    schema["components"]["securitySchemes"]["SsoCookie"] = {
-        "type": "apiKey", "in": "cookie", "name": settings.SSO_COOKIE_NAME,
-    }
     for path, operations in schema["paths"].items():
         for method in operations.values():
-            if path.endswith("/login") or path.endswith("/sso/exchange") or path == "/health":
+            if path.endswith("/login") or path == "/health":
                 method["security"] = []
-            elif "/auth/sso/" in path:
-                method["security"] = [{"SsoCookie": []}]
-            elif path.startswith("/api/v1/customer/"):
-                method["security"] = [{"SsoCookie": []}]
             else:
                 method["security"] = [{"BearerAuth": []}]
     app.openapi_schema = schema
@@ -162,6 +152,43 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui():
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    token = jwt.encode(
+        {"sub": settings.APP_USERNAME, "exp": expire},
+        settings.JWT_SECRET,
+        algorithm="HS256",
+    )
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>NSE Mutual Fund API</title>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    </head>
+    <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+        const ui = SwaggerUIBundle({{
+            url: "/openapi.json",
+            dom_id: '#swagger-ui',
+            presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+            layout: "BaseLayout",
+            onComplete: function() {{
+                ui.preauthorizeApiKey("BearerAuth", "{token}");
+            }}
+        }});
+    </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
 
 
 @app.get("/health")

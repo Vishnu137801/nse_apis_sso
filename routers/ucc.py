@@ -131,3 +131,18 @@ async def register_ucc(payload: UCCRegistrationRequest, db: AsyncSession = Depen
     if failed_count:
         logger.warning("UCC partial failure: %s records failed", failed_count)
     return result
+
+
+@router.get("/fetch/{client_code}", response_model=UCCRegistrationResponse)
+async def fetch_ucc(client_code: str, db: AsyncSession = Depends(get_db)):
+    """Fetch UCC registration details for a client code from the local DB."""
+    result = await db.execute(
+        select(UCCRegistration).where(UCCRegistration.client_code == client_code)
+    )
+    record = result.scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=404, detail=f"No UCC record found for client_code: {client_code}")
+
+    columns = {c.name for c in UCCRegistration.__table__.columns} - {"id", "created_at", "updated_at"}
+    reg_data = {col: getattr(record, col) for col in columns}
+    return UCCRegistrationResponse(reg_details=[reg_data])
