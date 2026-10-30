@@ -6,8 +6,6 @@ class SIPCancellationDetail(BaseModel):
     client_code: Optional[str] = None
     sip_reg_no: Optional[str] = None
     remarks: Optional[str] = None
-    can_status: Optional[str] = None
-    can_remark: Optional[str] = None
 
 
 class SIPCancellationRequest(BaseModel):

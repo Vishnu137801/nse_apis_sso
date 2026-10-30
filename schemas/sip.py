@@ -13,8 +13,6 @@ class SIPDetail(BaseModel):
     frequency_type: Optional[str] = None
     frequency_allowed: Optional[str] = None
     installment_amount: Optional[str] = None
-    status: Optional[str] = None
-    member_code: Optional[str] = None
     folio_no: Optional[str] = None
     sip_remarks: Optional[str] = None
     installment_no: Optional[str] = None
@@ -42,10 +40,6 @@ class SIPDetail(BaseModel):
     filler_3: Optional[str] = None
     filler_4: Optional[str] = None
     filler_5: Optional[str] = None
-    reg_id: Optional[str] = None
-    reg_status: Optional[str] = None
-    reg_remark: Optional[str] = None
-    member_unique_id: Optional[str] = None
 
 
 class SIPRegistrationRequest(BaseModel):

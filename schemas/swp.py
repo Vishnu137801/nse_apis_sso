@@ -23,10 +23,6 @@ class SWPDetail(BaseModel):
     mobile: Optional[str] = None
     email: Optional[str] = None
     account_no: Optional[str] = None
-    reg_id: Optional[str] = None
-    reg_status: Optional[str] = None
-    reg_remark: Optional[str] = None
-    member_unique_id: Optional[str] = None
 
 
 class SWPRegistrationRequest(BaseModel):

@@ -24,11 +24,6 @@ class SwitchDetail(BaseModel):
     filler1: Optional[str] = None
     filler2: Optional[str] = None
     filler3: Optional[str] = None
-    trxn_so_order_id: Optional[str] = None
-    trxn_si_order_id: Optional[str] = None
-    trxn_status: Optional[str] = None
-    trxn_remark: Optional[str] = None
-    member_unique_id: Optional[str] = None
 
 
 class SwitchEntryRequest(BaseModel):

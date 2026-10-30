@@ -24,10 +24,6 @@ class STPDetail(BaseModel):
     sub_broker_arn_code: Optional[str] = None
     mobile: Optional[str] = None
     email: Optional[str] = None
-    reg_id: Optional[str] = None
-    reg_status: Optional[str] = None
-    reg_remark: Optional[str] = None
-    member_unique_id: Optional[str] = None
 
 
 class STPRegistrationRequest(BaseModel):
