@@ -49,6 +49,13 @@ def format_client_code(sequence: int) -> str:
     return f"LVMF{sequence:05d}"
 
 
+def generate_client_code(member_code: str, lendrix_uuid: str) -> str:
+    """Generate a deterministic client code from member_code + lendrix_uuid."""
+    import hashlib
+    digest = hashlib.sha256(f"{member_code}:{lendrix_uuid}".encode()).hexdigest()[:5].upper()
+    return f"LV{digest}"
+
+
 async def next_sequential_client_code(db: AsyncSession) -> str:
     """
     Returns the next LVMF##### code using a PostgreSQL sequence.
