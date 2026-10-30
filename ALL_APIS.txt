@@ -1,0 +1,204 @@
+================================================================================
+  NSE MUTUAL FUND API — COMPLETE ENDPOINT LIST
+  Base URL : http://127.0.0.1:8000/api/v1
+  Total    : 102 endpoints
+================================================================================
+
+
+================================================================================
+SECTION A — CUSTOMER APIs (UI must integrate these)
+Total: 12 endpoints
+================================================================================
+
+  These use:  Authorization: Bearer <nse_token>  (from POST /auth/login)
+  client_code is AUTO-INJECTED — UI does NOT send it (except payments)
+
+  NO.  METHOD  ENDPOINT                          NOTES
+  ---  ------  --------------------------------  ----------------------------
+  1    POST    /auth/login                       No auth needed
+  2    GET     /mf/onboarding/status             Check UCC + 6-step status
+  3    POST    /mf/ucc/register                  Idempotency-Key header req.
+  4    GET     /customer/registration/status     Quick UCC status check
+  5    GET     /customer/onboarding/status       6-step progress tracker
+  6    GET     /ucc/fetch/{client_code}          View UCC profile
+  7    GET     /customer/schemes                 Scheme catalogue / search
+  8    POST    /mf/order/entry                   Lumpsum buy / sell
+  9    POST    /mf/sip/register                  SIP registration
+  10   POST    /mf/xsip/register                 XSIP registration
+  11   POST    /mf/payments/purchase             Pay for order (UPI/NET etc)
+  12   POST    /mf/payments/upi-status           UPI payment status check
+
+
+================================================================================
+SECTION B — SSO APIs (if using cookie-based SSO flow)
+Total: 3 endpoints
+================================================================================
+
+  NO.  METHOD  ENDPOINT                          NOTES
+  ---  ------  --------------------------------  ----------------------------
+  13   POST    /auth/sso/exchange                Redeem one-time code
+  14   GET     /auth/sso/me                      Get current SSO session
+  15   POST    /auth/sso/logout                  Revoke SSO session
+
+
+================================================================================
+SECTION C — ADMIN / BACKEND APIs (NOT for UI / customer)
+Total: 87 endpoints
+================================================================================
+
+  These use:  Authorization: Bearer <app_token>  (admin login)
+
+  --- UCC ---
+  NO.  METHOD  ENDPOINT
+  16   GET     /ucc/suggest-client-code
+  17   POST    /ucc/register
+  18   GET     /ucc/fetch/{client_code}
+
+  --- ORDERS ---
+  19   POST    /order/entry
+  20   POST    /switch/entry
+  21   POST    /order-cancellation/cancel
+
+  --- SIP ---
+  22   POST    /sip/register
+  23   POST    /sip/umrn-mapping
+  24   POST    /sip-topup/register
+  25   POST    /sip-cancellation/cancel
+  26   POST    /modification/sip
+  27   POST    /sip-amc-pause/pause
+  28   POST    /sip-amc-pause/report
+  29   POST    /registration/sip-xsip-pause
+
+  --- XSIP ---
+  30   POST    /xsip/register
+  31   POST    /xsip-cancellation/cancel
+  32   POST    /daily-xsip-cancellation/cancel
+  33   POST    /modification/xsip
+
+  --- STP ---
+  34   POST    /stp/register
+  35   POST    /stp-cancellation/cancel
+  36   POST    /stp-modification/modify
+
+  --- SWP ---
+  37   POST    /swp/register
+  38   POST    /cancellation/swp
+  39   POST    /swp-modification/modify
+
+  --- KYC / FATCA / DOCUMENTS ---
+  40   POST    /ekyc/register
+  41   POST    /registration/kyc-fresh-register
+  42   POST    /fatca/upload
+  43   POST    /fatca/common-upload
+  44   POST    /fatca/image-upload
+  45   POST    /aof/image-upload
+  46   POST    /elog/upload
+  47   POST    /poa/upload
+  48   POST    /cancel-cheque/upload
+
+  --- MANDATE & BANK ---
+  49   POST    /mandate/register
+  50   POST    /mandate/image-upload
+  51   POST    /client-bank-detail/update
+  52   POST    /utr/update
+
+  --- PAYMENTS (ADMIN) ---
+  53   POST    /payments/purchase
+  54   POST    /payments/upi-status
+
+  --- NFT (Non-Financial Transactions) ---
+  55   POST    /nft/nominee
+  56   POST    /nft/change-of-bank
+  57   POST    /nft/change-of-bank-single
+  58   POST    /nft/change-of-dividend
+  59   POST    /nft/change-of-broker
+  60   POST    /nft/change-of-contact
+  61   POST    /nft/consolidation-of-folio
+  62   POST    /nft/image-upload
+
+  --- COMMUNICATION ---
+  63   POST    /communication/get-link
+  64   POST    /communication/resend
+
+  --- REPORTS ---
+  65   POST    /reports/provisional-orders
+  66   POST    /reports/order-status
+  67   POST    /reports/mandate-status
+  68   POST    /reports/member-fund-allocation/order-wise
+  69   POST    /reports/member-fund-allocation/age-wise
+  70   POST    /reports/redemption-payout
+  71   POST    /reports/redemption-payout-non-demat
+  72   POST    /reports/redemption-statement
+  73   POST    /reports/allotment-statement
+  74   POST    /reports/securities-delivery-shortage
+  75   POST    /reports/2fa
+  76   POST    /reports/client-authorization
+  77   POST    /reports/client-detail
+  78   POST    /reports/order-lifecycle
+  79   POST    /reports/transaction-detail
+  80   POST    /reports/fatca
+  81   POST    /reports/aof-image-upload
+  82   POST    /reports/elog-upload
+  83   POST    /reports/sip-registration
+  84   POST    /reports/sip-cancellation
+  85   POST    /reports/sip-installment-due
+  86   POST    /reports/sip-topup
+  87   POST    /reports/stepup-registration
+  88   POST    /reports/xsip-registration
+  89   POST    /reports/xsip-cancellation
+  90   POST    /reports/xsip-installment-due
+  91   POST    /reports/xsip-topup
+  92   POST    /reports/stp-registration
+  93   POST    /reports/stp-cancellation
+  94   POST    /reports/stp-installment-due
+  95   POST    /reports/swp-registration
+  96   POST    /reports/swp-cancellation
+  97   POST    /reports/swp-installment-due
+  98   POST    /reports/master-download
+  99   POST    /reports/client-kyc
+  100  POST    /reports/client-master
+
+  --- ADMIN ---
+  101  POST    /admin/change-api-secret
+  102  GET     /auth/debug/outbound-ip
+
+  --- SYSTEM ---
+       GET     /health
+       GET     /docs
+       GET     /openapi.json
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+  SECTION A  Customer APIs (UI integration)   :  12
+  SECTION B  SSO APIs (cookie flow)           :   3
+  SECTION C  Admin / Backend APIs             :  87
+                                               -----
+  TOTAL                                       : 102
+
+
+================================================================================
+CUSTOMER API — client_code RULES
+================================================================================
+
+  ENDPOINT                    client_code
+  --------------------------  --------------------------------------------------
+  /auth/login                 N/A — returns client_codes in response
+  /mf/onboarding/status       auto from SSO session
+  /mf/ucc/register            auto-generated as LVMF##### by backend
+  /customer/registration/status auto from SSO session
+  /customer/onboarding/status auto from SSO session
+  /ucc/fetch/{client_code}    in URL path (use value from login response)
+  /customer/schemes           N/A
+  /mf/order/entry             auto-injected — DO NOT send in body
+  /mf/sip/register            auto-injected — DO NOT send in body
+  /mf/xsip/register           auto-injected — DO NOT send in body
+  /mf/payments/purchase       optional — auto-injected if not sent
+  /mf/payments/upi-status     optional — auto-injected if not sent
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================
