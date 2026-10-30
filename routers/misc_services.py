@@ -79,26 +79,46 @@ async def ekyc_register(payload: EKYCRegRequest):
 
 
 @router.post("/payments/purchase", response_model=PurchasePaymentResponse)
-async def purchase_payment(payload: PurchasePaymentRequest):
+async def purchase_payment(payload: PurchasePaymentRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_PURCHASE_PAYMENT_URL}")
     return await _post(NSE_PURCHASE_PAYMENT_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/payments/upi-status", response_model=UPIStatusCheckResponse)
-async def upi_status_check(payload: UPIStatusCheckRequest):
+async def upi_status_check(payload: UPIStatusCheckRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_UPI_STATUS_URL}")
     return await _post(NSE_UPI_STATUS_URL, payload.model_dump())
 
 
 @router.post("/cancellation/swp", response_model=SWPCancellationResponse)
 async def swp_cancellation(payload: SWPCancellationRequest, token_payload: dict = Depends(require_auth_payload)):
-    assert_token_owns_client_code(token_payload, payload.client_code)
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    for item in payload.can_data:
+        if not item.client_code:
+            item.client_code = auto_code
+        if not item.client_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        assert_token_owns_client_code(token_payload, item.client_code)
     logger.info(f"Sending to NSE URL: {NSE_SWP_CAN_URL}")
     return await _post(NSE_SWP_CAN_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/registration/sip-xsip-pause", response_model=SIPXSIPPauseResponse)
 async def sip_xsip_pause(payload: SIPXSIPPauseRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
     assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_XSIP_PAUSE_URL}")
     return await _post(NSE_XSIP_PAUSE_URL, payload.model_dump(exclude_none=True))
@@ -169,6 +189,10 @@ async def nft_image_upload(payload: NFTImageUploadRequest):
 
 @router.post("/modification/sip", response_model=SIPModResponse)
 async def sip_modification(payload: SIPModRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
     assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_SIP_MOD_URL}")
     return await _post(NSE_SIP_MOD_URL, payload.model_dump(exclude_none=True))
@@ -176,12 +200,21 @@ async def sip_modification(payload: SIPModRequest, token_payload: dict = Depends
 
 @router.post("/modification/xsip", response_model=SIPModResponse)
 async def xsip_modification(payload: SIPModRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
     assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_XSIP_MOD_URL}")
     return await _post(NSE_XSIP_MOD_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/registration/kyc-fresh-register", response_model=KycFreshRegisterResponse)
-async def kyc_fresh_register(payload: KycFreshRegisterRequest):
+async def kyc_fresh_register(payload: KycFreshRegisterRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_KYC_FRESH_REG_URL}")
     return await _post(NSE_KYC_FRESH_REG_URL, payload.model_dump(exclude_none=True))

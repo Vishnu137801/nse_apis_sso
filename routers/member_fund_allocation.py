@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.member_fund_allocation import (
     MemberFundOrderWiseRequest,
@@ -46,12 +47,20 @@ async def _fetch_report(url: str, payload: dict) -> dict:
 
 
 @router.post("/member-fund-allocation/order-wise", response_model=MemberFundAllocationResponse)
-async def member_fund_order_wise(payload: MemberFundOrderWiseRequest):
+async def member_fund_order_wise(payload: MemberFundOrderWiseRequest, token_payload: dict = Depends(require_auth_payload)):
+    if payload.client_code:
+        assert_token_owns_client_code(token_payload, payload.client_code)
+    else:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
     logger.info(f"Sending to NSE URL: {NSE_ORDER_WISE_URL}")
     return await _fetch_report(NSE_ORDER_WISE_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/member-fund-allocation/age-wise", response_model=MemberFundAllocationResponse)
-async def member_fund_age_wise(payload: MemberFundAgeWiseRequest):
+async def member_fund_age_wise(payload: MemberFundAgeWiseRequest, token_payload: dict = Depends(require_auth_payload)):
+    if payload.client_code:
+        assert_token_owns_client_code(token_payload, payload.client_code)
+    else:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
     logger.info(f"Sending to NSE URL: {NSE_AGE_WISE_URL}")
     return await _fetch_report(NSE_AGE_WISE_URL, payload.model_dump(exclude_none=True))

@@ -16,7 +16,7 @@ class EKYCRegResponse(BaseModel):
 
 class PurchasePaymentRequest(BaseModel):
     payment_mode: str
-    client_code: str
+    client_code: Optional[str] = None
     order_ids: str
     mandate_id: Optional[str] = None
     bank_account_no: Optional[str] = None
@@ -49,7 +49,7 @@ class PurchasePaymentResponse(BaseModel):
 
 class UPIStatusCheckRequest(BaseModel):
     nse_upi_ref_no: str
-    client_code: str
+    client_code: Optional[str] = None
 
 
 class UPIStatusCheckResponse(BaseModel):
@@ -67,7 +67,7 @@ class UPIStatusCheckResponse(BaseModel):
 
 
 class SWPCanItem(BaseModel):
-    client_code: str
+    client_code: Optional[str] = None
     swp_reg_no: str
     remarks: Optional[str] = None
     can_status: Optional[str] = None
@@ -91,6 +91,7 @@ class SIPPauseItem(BaseModel):
 
 class SIPXSIPPauseRequest(BaseModel):
     pause_data: List[SIPPauseItem]
+    client_code: Optional[str] = None
 
 
 class SIPXSIPPauseResponse(BaseModel):
@@ -439,6 +440,7 @@ class SIPModItem(BaseModel):
 
 class SIPModRequest(BaseModel):
     mod_data: List[SIPModItem]
+    client_code: Optional[str] = None
 
 
 class SIPModResponse(BaseModel):
@@ -447,7 +449,7 @@ class SIPModResponse(BaseModel):
 
 class KycFreshRegisterRequest(BaseModel):
     pan_no: str
-    client_code: str
+    client_code: Optional[str] = None
     mobile_no: Optional[str] = None
     email: Optional[str] = None
     filler_1: Optional[str] = None
