@@ -28,7 +28,9 @@ import models.stp_modification
 import models.swp_modification
 import models.sip_amc_pause
 import models.sso  # SSO mapping + revocation tables
-from routers import ucc, order, switch, xsip, sip_topup, sip, stp, swp, order_cancellation, sip_cancellation, xsip_cancellation, daily_xsip_cancellation, stp_cancellation, client_bank_detail, mandate_registration, mandate_image_upload, utr_update, sip_umrn_mapping, order_status_report, mandate_status_report, communication, fatca_registration, fatca_common, aof_image_upload, fatca_image_upload, elog_upload, poa_upload, cancel_cheque_upload, member_fund_allocation, redemption_payout, statement_reports, misc_reports, misc_services, stp_modification, swp_modification, sip_amc_pause, auth, customer, mf
+import models.aof_image_upload
+import models.elog_upload
+from routers import ucc, order, switch, xsip, sip_topup, sip, stp, swp, order_cancellation, sip_cancellation, xsip_cancellation, daily_xsip_cancellation, stp_cancellation, client_bank_detail, mandate_registration, mandate_image_upload, utr_update, sip_umrn_mapping, order_status_report, mandate_status_report, communication, fatca_registration, fatca_common, aof_image_upload, fatca_image_upload, elog_upload, poa_upload, cancel_cheque_upload, member_fund_allocation, redemption_payout, statement_reports, misc_reports, misc_services, stp_modification, swp_modification, sip_amc_pause, auth, customer
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -122,7 +124,6 @@ app.include_router(stp_modification.router, prefix="/api/v1", dependencies=[Depe
 app.include_router(swp_modification.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
 app.include_router(sip_amc_pause.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
 app.include_router(customer.router, prefix="/api/v1")
-app.include_router(mf.router, prefix="/api/v1")
 
 
 def custom_openapi():

@@ -1,0 +1,556 @@
+================================================================================
+                     CUSTOMER API FLOW - COMPLETE GUIDE
+================================================================================
+
+BASE URL: https://your-domain.com/api/v1
+AUTH: All APIs (except login) require → Authorization: Bearer <nse_token>
+NOTE: client_code is NEVER sent by UI — always auto-injected from nse_token
+
+================================================================================
+1. LOGIN
+================================================================================
+
+POST /api/v1/auth/login
+
+Request:
+{
+  "email": "customer@example.com",
+  "password": "yourpassword"
+}
+
+Response:
+{
+  "success": true,
+  "message": "Login successful",
+  "nse_token": "<JWT — store this and send as Bearer token>",
+  "lendrix_access_token": "<lendrix token>",
+  "lendrix_refresh_token": "<lendrix refresh token>",
+  "user": {
+    "id": "<lendrix_uuid>",
+    "email": "customer@example.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "phone": "9999999999"
+  },
+  "nse": {
+    "client_codes": ["LVMF00001"],
+    "nse_registered": true,
+    "registration_status": "registered"
+  },
+  "ucc_details": [
+    {
+      "client_code": "LVMF00001",
+      "primary_holder_first_name": "John",
+      "primary_holder_pan": "ABCDE1234F",
+      "email": "customer@example.com",
+      "reg_status": "REG_SUCCESS"
+    }
+  ]
+}
+
+Flow:
+  → Proxied to Lendrix auth server
+  → lendrix_uuid extracted from Lendrix response
+  → DB queried for client_codes linked to lendrix_uuid
+  → nse_token JWT minted with lendrix_uuid + client_codes
+  → Customer profile upserted in DB
+  → UCC details fetched from DB and returned
+
+--------------------------------------------------------------------------------
+
+================================================================================
+2. CHECK REGISTRATION STATUS
+================================================================================
+
+GET /api/v1/customer/registration/status
+Headers: Authorization: Bearer <nse_token>
+
+Response:
+{
+  "registration_status": "registered",   // unlinked | pending | failed | registered
+  "client_codes": ["LVMF00001"],
+  "attempt_status": "registered",
+  "euin": "E656590"
+}
+
+registration_status values:
+  "unlinked"         → Customer has no NSE account — show info screen
+  "pending"          → Registration submitted, waiting for NSE confirmation
+  "failed"           → Registration rejected by NSE
+  "linking_required" → Account exists but needs manual linking
+  "registered"       → Fully registered — proceed to onboarding/status
+
+Flow:
+  → nse_token verified → lendrix_uuid extracted
+  → DB queried: lendrix_user_nse_mapping JOIN ucc_registrations
+    (only returns codes with reg_status IN REG_SUCCESS, S)
+  → Latest CustomerUccAttempt fetched for status
+
+--------------------------------------------------------------------------------
+
+================================================================================
+3. CHECK ONBOARDING STATUS (6 STEPS)
+================================================================================
+
+GET /api/v1/customer/onboarding/status
+Headers: Authorization: Bearer <nse_token>
+
+Response:
+{
+  "authenticated": true,
+  "onboarding_complete": false,
+  "steps": {
+    "ucc": {
+      "done": true,
+      "status": "registered",
+      "client_codes": ["LVMF00001"]
+    },
+    "ekyc": {
+      "done": true,
+      "status": "KYC VALIDATED",
+      "verified": true
+    },
+    "aof": {
+      "done": false,
+      "status": "not_submitted",
+      "records_found": 0
+    },
+    "elog": {
+      "done": false,
+      "status": "not_submitted",
+      "records_found": 0
+    },
+    "mandate": {
+      "done": false,
+      "status": "not_registered",
+      "mandate_count": 0
+    },
+    "nominees": {
+      "done": false,
+      "status": "not_added",
+      "nominee_count": 0
+    }
+  }
+}
+
+Flow:
+  → nse_token verified → client_code extracted
+  → 6 NSE report APIs called in PARALLEL:
+      CLIENT_KYC_REPORT        → ekyc step
+      AOF_IMAGE_UPLOAD_REPORT  → aof step
+      ELOG_UPLOAD_REPORT       → elog step
+      MANDATE_STATUS           → mandate step
+      client_master_report     → nominees step
+      DB client_codes check    → ucc step
+  → Response cached per customer for 60 seconds
+
+UI Action per step:
+  ucc.done = false      → Show "Contact support" (admin registers UCC)
+  ekyc.done = false     → Call POST /mf/ekyc/register or /mf/kyc/fresh-register
+  aof.done = false      → Call POST /mf/aof/image-upload
+  elog.done = false     → Call POST /mf/elog/upload
+  mandate.done = false  → Call POST /mf/mandate/register
+  nominees.done = false → Call POST /mf/nft/nominee
+
+--------------------------------------------------------------------------------
+
+================================================================================
+4. UPDATE APIS — FIX INCOMPLETE ONBOARDING STEPS
+================================================================================
+NOTE: client_code is auto-injected from nse_token in ALL update APIs below.
+      UI must NOT send client_code in request body.
+
+--------------------------------------------------------------------------------
+4a. MANDATE REGISTER
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/mandate/register
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v2/registration/product/MANDATE
+DB Table: mandate_registrations
+
+Request:
+{
+  "reg_data": [
+    {
+      "amount": "5000",
+      "mandate_type": "X",
+      "account_no": "1234567890",
+      "ac_type": "SB",
+      "ifsc_code": "HDFC0001234",
+      "micr_no": "400240001",
+      "start_date": "01-01-2025",
+      "end_date": "31-12-2099"
+    }
+  ]
+}
+
+Response:
+{
+  "reg_data": [
+    {
+      "client_code": "LVMF00001",
+      "amount": "5000",
+      "mandate_type": "X",
+      "account_no": "1234567890",
+      "reg_id": "MND123456",
+      "reg_status": "NEW",
+      "reg_remark": "Mandate registered successfully"
+    }
+  ]
+}
+
+Flow:
+  → client_code auto-injected from nse_token
+  → Sent to NSE MANDATE endpoint
+  → NSE response saved to mandate_registrations table with lendrix_uuid
+
+--------------------------------------------------------------------------------
+4b. AOF IMAGE UPLOAD
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/aof/image-upload
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v2/fileupload/AOFIMG
+DB Table: aof_image_uploads
+
+Request:
+{
+  "file_name": "aof_document.pdf",
+  "document_type": "AOF",
+  "file_data": "<base64 encoded file content>"
+}
+
+Response:
+{
+  "status": "SUCCESS",
+  "message": "AOF image uploaded successfully"
+}
+
+Flow:
+  → client_code auto-injected from nse_token
+  → File sent to NSE AOF image upload endpoint
+  → NSE status + message saved to aof_image_uploads table with lendrix_uuid
+
+--------------------------------------------------------------------------------
+4c. ELOG UPLOAD
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/elog/upload
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v2/registration/eLOG
+DB Table: elog_uploads
+
+Request:
+{
+  "primary_holder_pan": "ABCDE1234F",
+  "primary_holder_ip_address": "192.168.1.1",
+  "primary_holder_log_date": "01-01-2025 10:00:00",
+  "second_holder_pan": null,
+  "second_holder_ip_address": null,
+  "second_holder_log_date": null,
+  "third_holder_pan": null,
+  "third_holder_ip_address": null,
+  "third_holder_log_date": null
+}
+
+Response:
+{
+  "client_code": "LVMF00001",
+  "primary_holder_pan": "ABCDE1234F",
+  "elog_status": "SUCCESS",
+  "elog_status_message": "ELOG uploaded successfully"
+}
+
+Flow:
+  → client_code auto-injected from nse_token
+  → Sent to NSE eLOG endpoint
+  → Full record saved to elog_uploads table with lendrix_uuid
+
+--------------------------------------------------------------------------------
+4d. FATCA UPLOAD
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/fatca/upload
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v2/registration/FATCA
+DB Table: fatca_registrations
+
+Request:
+{
+  "reg_details": [
+    {
+      "pan_rp": "ABCDE1234F",
+      "inv_name": "John Doe",
+      "dob": "01-01-1990",
+      "tax_status": "01",
+      "data_src": "E",
+      "addr_type": "1",
+      "co_bir_inc": "IN",
+      "tax_res1": "IN",
+      "srce_wealt": "01",
+      "inc_slab": "32",
+      "occ_code": "01",
+      "occ_type": "B",
+      "pep_flag": "N"
+    }
+  ]
+}
+
+Response:
+{
+  "reg_details": [
+    {
+      "pan_rp": "ABCDE1234F",
+      "reg_id": "FATCA123456",
+      "reg_status": "S",
+      "reg_remark": "FATCA registered successfully"
+    }
+  ]
+}
+
+Flow:
+  → client_code verified from nse_token
+  → PAN ownership verified against ucc_registrations in DB
+    (403 if PAN does not belong to this customer)
+  → Sent to NSE FATCA endpoint
+  → NSE response saved to fatca_registrations table with lendrix_uuid
+
+--------------------------------------------------------------------------------
+4e. EKYC REGISTER
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/ekyc/register
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v1/EKYC/EKYCREG
+DB: No DB save (NSE owns KYC data)
+
+Request:
+{
+  "amcCode": "HDFC",
+  "panNo": "ABCDE1234F",
+  "mobileNo": "9999999999",
+  "invEmail": "customer@example.com"
+}
+
+Response:
+{
+  "link": "https://nse-ekyc-link.com/verify?token=xxx",
+  "message": "EKYC link generated successfully"
+}
+
+Flow:
+  → Verifies customer has a valid client_code in nse_token
+  → Sends to NSE EKYC endpoint
+  → Returns KYC verification link for customer to complete
+
+--------------------------------------------------------------------------------
+4f. KYC FRESH REGISTER
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/kyc/fresh-register
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v1/EKYC/EKYCREG
+DB: No DB save
+
+Request:
+{
+  "pan_no": "ABCDE1234F",
+  "mobile_no": "9999999999",
+  "email": "customer@example.com"
+}
+
+Response:
+{
+  "pan_no": "ABCDE1234F",
+  "client_code": "LVMF00001",
+  "status": "SUCCESS",
+  "remarks": "KYC registered successfully"
+}
+
+Flow:
+  → client_code auto-injected from nse_token
+  → Sent to NSE EKYC endpoint with client_code
+
+--------------------------------------------------------------------------------
+4g. NFT NOMINEE
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/nft/nominee
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v1/NFT/NOM
+DB: No DB save (NSE owns folio data)
+
+Request:
+{
+  "nft_nominee_registration_modification_details": [
+    {
+      "AMC_CODE": "HDFC",
+      "FOLIO_NO": "1234567",
+      "FH_NAME": "John Doe",
+      "TAX_NUMBER": "ABCDE1234F",
+      "NOM_OPT": "Y",
+      "NOM1_NAME": "Jane Doe",
+      "NOM1_RELA": "WIFE",
+      "NOM1_PER": "100",
+      "NOM_COUNT": "1"
+    }
+  ]
+}
+
+Response:
+{
+  "Status": "SUCCESS",
+  "Message": "Nominee registered successfully"
+}
+
+Flow:
+  → Verifies customer has valid client_code in nse_token
+  → Sent directly to NSE NFT NOM endpoint
+
+--------------------------------------------------------------------------------
+4h. NFT CHANGE OF BANK
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/nft/change-of-bank
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v1/NFT/COA
+DB: No DB save
+
+Request:
+{
+  "nft_change_of_bank_account_details": [
+    {
+      "AMC_CODE": "HDFC",
+      "FOLIO_NO": "1234567",
+      "FH_NAME": "John Doe",
+      "TAX_NUMBER": "ABCDE1234F",
+      "AB1_ACT_NO": "9876543210",
+      "AB1_IFS_CD": "HDFC0001234",
+      "AB1_ACT_TY": "SB",
+      "AB1_NAME": "HDFC Bank"
+    }
+  ]
+}
+
+Response:
+{
+  "Status": "SUCCESS",
+  "Message": "Bank account updated successfully"
+}
+
+--------------------------------------------------------------------------------
+4i. NFT CHANGE OF CONTACT
+--------------------------------------------------------------------------------
+
+POST /api/v1/mf/nft/change-of-contact
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: /nsemfdesk/api/v1/NFT/COC
+DB: No DB save
+
+Request:
+{
+  "nft_change_of_contact_details": [
+    {
+      "AMC_CODE": "HDFC",
+      "FOLIO_NO": "1234567",
+      "FH_NAME": "John Doe",
+      "TAX_NUMBER": "ABCDE1234F",
+      "EMAIL": "newemail@example.com",
+      "MOBILE_NO": "9999999999"
+    }
+  ]
+}
+
+Response:
+{
+  "Status": "SUCCESS",
+  "Message": "Contact details updated successfully"
+}
+
+--------------------------------------------------------------------------------
+
+================================================================================
+5. BROWSE SCHEMES
+================================================================================
+
+GET /api/v1/customer/schemes
+Headers: Authorization: Bearer <nse_token>
+NSE Endpoint: NSE scheme master file download
+
+Response: Plain text scheme master file (text/plain)
+
+Flow:
+  → nse_token verified
+  → NSE scheme master file downloaded and returned to customer
+  → Cache-Control: no-store
+
+--------------------------------------------------------------------------------
+
+================================================================================
+COMPLETE CUSTOMER JOURNEY
+================================================================================
+
+STEP 1: Login
+  POST /auth/login
+  → Store nse_token from response
+
+STEP 2: Check Registration
+  GET /customer/registration/status
+  → "registered"       → Go to Step 3
+  → "unlinked"         → Contact support (admin registers UCC)
+  → "pending"          → Show "Registration in progress" screen
+  → "failed"           → Show error, contact support
+
+STEP 3: Check Onboarding
+  GET /customer/onboarding/status
+  → Check each step:
+
+    ucc.done = false      → Contact support
+    ekyc.done = false     → POST /mf/ekyc/register
+                            or POST /mf/kyc/fresh-register
+    aof.done = false      → POST /mf/aof/image-upload
+    elog.done = false     → POST /mf/elog/upload
+    mandate.done = false  → POST /mf/mandate/register
+    nominees.done = false → POST /mf/nft/nominee
+    fatca pending         → POST /mf/fatca/upload
+
+STEP 4: After All Steps Done
+  → onboarding_complete = true
+  → Customer is fully onboarded
+  → GET /customer/schemes to browse mutual funds
+
+STEP 5: Update Details Anytime
+  Change bank account  → POST /mf/nft/change-of-bank
+  Change contact       → POST /mf/nft/change-of-contact
+  Update nominee       → POST /mf/nft/nominee
+
+================================================================================
+DB TABLES UPDATED BY CUSTOMER APIS
+================================================================================
+
+API                          | DB Table
+-----------------------------|----------------------
+POST /mf/mandate/register    | mandate_registrations
+POST /mf/aof/image-upload    | aof_image_uploads
+POST /mf/elog/upload         | elog_uploads
+POST /mf/fatca/upload        | fatca_registrations
+POST /auth/login             | customer_profiles
+POST /auth/login (SSO)       | nse_sso_sessions
+
+All tables store lendrix_uuid for customer isolation.
+EKYC, KYC fresh, NFT APIs → No DB save (NSE owns that data)
+
+================================================================================
+ERROR CODES
+================================================================================
+
+401 Unauthorized     → nse_token missing, expired or invalid → Re-login
+403 Forbidden        → No verified client_code found → UCC not registered
+                       or PAN not owned by this customer
+502 Bad Gateway      → Cannot connect to NSE
+504 Gateway Timeout  → NSE request timed out
+422 Unprocessable    → Missing required fields in request body
+500 Internal Error   → NSE accepted but DB save failed — do not retry
+
+================================================================================
