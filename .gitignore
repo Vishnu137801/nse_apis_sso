@@ -1,4 +1,12 @@
 .env
+debug_*.py
+debug_*.txt
+backfill*.py
+check_tables.py
+create_seq.py
+run_migration*.py
+run_missing*.py
+*.log
 test_db.py
 __pycache__/
 *.py[cod]
