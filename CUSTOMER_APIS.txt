@@ -1,0 +1,667 @@
+================================================================================
+  NSE MUTUAL FUND — CUSTOMER API INTEGRATION
+  Base URL : http://127.0.0.1:8000/api/v1
+  Total    : 12 APIs
+================================================================================
+
+AUTH HEADER (all APIs except login):
+  Authorization: Bearer <nse_token>
+
+CLIENT CODE RULE:
+  - NEVER send client_code for order / SIP / XSIP — backend auto-injects it
+  - client_code is auto-injected ONLY after UCC is registered (REG_SUCCESS)
+  - If UCC not done → 403 NSE_REGISTRATION_REQUIRED
+
+================================================================================
+API 1 — LOGIN
+================================================================================
+
+POST /auth/login
+
+Request:
+  {
+    "email": "customer@example.com",
+    "password": "Password@123"
+  }
+
+Response (200):
+  {
+    "success": true,
+    "message": "Login successful",
+    "nse_token": "<JWT>",               <-- save this, send as Bearer on all APIs
+    "lendrix_access_token": "<JWT>",
+    "lendrix_refresh_token": "<JWT>",
+    "user": {
+      "id": "021bd4fe-f07f-4b39-8e17-b70c786f4ed8",
+      "email": "customer@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "phone": "9999999999"
+    },
+    "nse": {
+      "client_codes": ["LVMF00001"],    <-- [] if not yet UCC registered
+      "nse_registered": true,
+      "registration_status": "registered"
+    },
+    "ucc_details": [                    <-- null if not yet UCC registered
+      {
+        "client_code": "LVMF00001",
+        "primary_holder_first_name": "JOHN",
+        "primary_holder_last_name": "DOE",
+        "primary_holder_pan": "ABCDE1234F",
+        "email": "customer@example.com",
+        "indian_mobile_no": "9999999999",
+        "address_1": "123 Main St",
+        "city": "HYDERABAD",
+        "state": "TS",
+        "pincode": "500001",
+        "account_no_1": "1234567890",
+        "ifsc_code_1": "HDFC0001234",
+        "reg_status": "REG_SUCCESS"
+      }
+    ]
+  }
+
+Response (403 — KYC pending):
+  {
+    "success": false,
+    "message": "Please complete KYC",
+    "code": "KYC_PENDING"
+  }
+
+UI Logic:
+  if nse.nse_registered = false  --> go to API 3 (UCC Register)
+  if nse.nse_registered = true   --> go to API 5 (Onboarding Status)
+
+
+================================================================================
+API 2 — ONBOARDING STATUS (simple)
+================================================================================
+
+GET /mf/onboarding/status
+Authorization: Bearer <nse_token>
+
+Response (200):
+  {
+    "authenticated": true,
+    "lendrix_uuid": "021bd4fe-f07f-4b39-8e17-b70c786f4ed8",
+    "has_nse_account": false,
+    "linking_required": true,
+    "client_codes": [],
+    "ucc_status": "not_started",
+    "onboarding_status": "not_started",
+    "next_action": "start_registration",
+    "readiness_checks": {
+      "lendrix_kyc": "unknown",
+      "fatca": "unknown",
+      "bank": "unknown",
+      "mandate": "unknown"
+    }
+  }
+
+ucc_status → UI action:
+  "not_started"              --> show UCC form
+  "registration_in_progress" --> show spinner
+  "pending_confirmation"     --> show "Awaiting NSE confirmation"
+  "registered"               --> show dashboard
+  "rejected"                 --> show error + retry
+  "linking_required"         --> show "Contact support"
+
+next_action → UI action:
+  "start_registration"       --> render UCC form
+  "await_confirmation"       --> show pending state
+  "correct_registration"     --> show form with error
+  "link_existing_account"    --> show support contact
+  "open_dashboard"           --> redirect to dashboard
+
+
+================================================================================
+API 3 — UCC REGISTER
+================================================================================
+
+POST /mf/ucc/register
+Authorization: Bearer <nse_token>
+Idempotency-Key: <uuid>    <-- generate with crypto.randomUUID(), REQUIRED
+
+NOTE: Do NOT send client_code — auto-generated as LVMF#####
+NOTE: Do NOT send euin_number / euin_declaration — auto-injected
+
+Request:
+  {
+    "reg_details": [
+      {
+        "primary_holder_first_name": "JOHN",
+        "primary_holder_middle_name": "",
+        "primary_holder_last_name": "DOE",
+        "tax_status": "01",
+        "gender": "M",
+        "primary_holder_dob_incorporation": "01/01/1990",
+        "occupation_code": "03",
+        "holding_nature": "SI",
+        "primary_holder_pan_exempt": "N",
+        "primary_holder_pan": "ABCDE1234F",
+        "client_type": "P",
+        "account_type_1": "SB",
+        "account_no_1": "1234567890",
+        "ifsc_code_1": "HDFC0001234",
+        "default_bank_flag_1": "Y",
+        "div_pay_mode": "04",
+        "address_1": "123 Main Street",
+        "address_2": "Area Name",
+        "address_3": "Landmark",
+        "city": "HYDERABAD",
+        "state": "TS",
+        "pincode": "500001",
+        "country": "INDIA",
+        "email": "customer@example.com",
+        "indian_mobile_no": "9999999999",
+        "communication_mode": "P",
+        "primary_holder_kyc_type": "E",
+        "aadhaar_updated": "Y",
+        "paperless_flag": "Z",
+        "mobile_declaration_flag": "SE",
+        "email_declaration_flag": "SE",
+        "nomination_opt": "Y",
+        "nomination_authentication": "O",
+        "nominee_1_name": "JANE DOE",
+        "nominee_1_relationship": "01",
+        "nominee_1_applicable": 100,
+        "nominee_1_minor_flag": "N",
+        "nominee_soa": "Y"
+      }
+    ]
+  }
+
+Response (200):
+  {
+    "reg_details": [
+      {
+        "client_code": "LVMF00001",
+        "reg_status": "REG_SUCCESS",
+        "reg_remark": null
+      }
+    ]
+  }
+
+Response (409 — duplicate):
+  { "detail": "This registration attempt already exists." }
+
+Response (409 — conflict):
+  { "detail": "Registration succeeded but account linking requires verification." }
+
+Field Reference:
+  tax_status    : "01"=Individual  "02"=Minor  "03"=NRI  "04"=HUF
+  gender        : "M"=Male  "F"=Female  "T"=Transgender
+  occupation    : "01"=Business  "02"=Service  "03"=Professional
+                  "04"=Agriculture  "05"=Retired  "06"=Housewife
+                  "07"=Student  "08"=Others
+  holding_nature: "SI"=Single  "JO"=Joint  "AS"=Anyone or Survivor
+  account_type  : "SB"=Savings  "CB"=Current  "NE"=NRE  "NO"=NRO
+  div_pay_mode  : "02"=Reinvest  "04"=Payout
+  communication : "P"=Physical  "E"=Email  "M"=Mobile
+  kyc_type      : "E"=eKYC  "K"=KRA  "C"=CKYC
+  nominee_rel   : "01"=Spouse  "02"=Son  "03"=Daughter  "04"=Father
+                  "05"=Mother  "06"=Brother  "07"=Sister  "08"=Others
+
+UI Logic after success:
+  - Poll GET /mf/onboarding/status until ucc_status = "registered"
+  - Then redirect to dashboard
+
+
+================================================================================
+API 4 — REGISTRATION STATUS (quick check)
+================================================================================
+
+GET /customer/registration/status
+Authorization: Bearer <nse_token>
+
+Response (200):
+  {
+    "authenticated": true,
+    "registration_status": "registered",
+    "client_codes": ["LVMF00001"],
+    "attempt_status": "registered",
+    "euin": "E123456"
+  }
+
+registration_status values:
+  "registered"       --> UCC done, show dashboard
+  "pending"          --> NSE processing, show spinner
+  "failed"           --> NSE rejected, show retry
+  "unlinked"         --> no attempt yet, show UCC form
+  "linking_required" --> contact support
+  "unknown"          --> show pending state
+
+
+================================================================================
+API 5 — ONBOARDING PROGRESS (6-step tracker)
+================================================================================
+
+GET /customer/onboarding/status
+Authorization: Bearer <nse_token>
+
+Response (200):
+  {
+    "authenticated": true,
+    "onboarding_complete": false,
+    "steps": {
+      "ucc": {
+        "done": true,
+        "status": "registered",
+        "client_codes": ["LVMF00001"]
+      },
+      "ekyc": {
+        "done": true,
+        "status": "KYC VALIDATED",
+        "verified": true
+      },
+      "aof": {
+        "done": false,
+        "status": "not_submitted",
+        "records_found": 0
+      },
+      "elog": {
+        "done": false,
+        "status": "not_submitted",
+        "records_found": 0
+      },
+      "mandate": {
+        "done": false,
+        "status": "not_registered",
+        "mandate_count": 0
+      },
+      "nominees": {
+        "done": true,
+        "status": "added",
+        "nominee_count": 1
+      }
+    }
+  }
+
+UI Logic:
+  - Render 6-step progress bar: steps[*].done = true → green, false → pending
+  - onboarding_complete = true → show "Ready to Invest" banner
+  - Each step.done = false → highlight as next action
+
+
+================================================================================
+API 6 — FETCH UCC PROFILE
+================================================================================
+
+GET /ucc/fetch/{client_code}
+Authorization: Bearer <nse_token>
+
+Example: GET /ucc/fetch/LVMF00001
+
+Response (200):
+  {
+    "client_code": "LVMF00001",
+    "primary_holder_first_name": "JOHN",
+    "primary_holder_middle_name": "",
+    "primary_holder_last_name": "DOE",
+    "primary_holder_pan": "ABCDE1234F",
+    "primary_holder_dob_incorporation": "01/01/1990",
+    "tax_status": "01",
+    "gender": "M",
+    "occupation_code": "03",
+    "holding_nature": "SI",
+    "email": "customer@example.com",
+    "indian_mobile_no": "9999999999",
+    "address_1": "123 Main Street",
+    "address_2": "Area Name",
+    "address_3": "Landmark",
+    "city": "HYDERABAD",
+    "state": "TS",
+    "pincode": "500001",
+    "country": "INDIA",
+    "account_type_1": "SB",
+    "account_no_1": "1234567890",
+    "ifsc_code_1": "HDFC0001234",
+    "default_bank_flag_1": "Y",
+    "nominee_1_name": "JANE DOE",
+    "nominee_1_relationship": "01",
+    "nominee_1_applicable": 100,
+    "reg_id": "131652563",
+    "reg_status": "REG_SUCCESS",
+    "reg_remark": null
+  }
+
+Errors:
+  403 → client_code does not belong to this token
+  404 → no UCC record found
+
+
+================================================================================
+API 7 — SCHEME CATALOGUE
+================================================================================
+
+GET /customer/schemes
+Authorization: Bearer <nse_token>
+
+Response: plain text (pipe-delimited NSE scheme master)
+Use for : scheme search / autocomplete dropdown
+Cache   : safe to cache for the session
+
+
+================================================================================
+API 8 — PLACE ORDER (Lumpsum Buy / Sell)
+================================================================================
+
+POST /mf/order/entry
+Authorization: Bearer <nse_token>
+
+NOTE: Do NOT send client_code / euin_number / euin_declaration
+
+Request:
+  {
+    "transaction_details": [
+      {
+        "scheme_code": "INF204K01I28",
+        "trxn_type": "P",
+        "buy_sell_type": "FRESH",
+        "demat_physical": "P",
+        "order_amount": "5000",
+        "kyc_flag": "Y",
+        "euin_declaration": "N",
+        "folio_no": "",
+        "remarks": ""
+      }
+    ]
+  }
+
+trxn_type  : "P"=Purchase  "R"=Redemption  "SP"=Switch Purchase  "SR"=Switch Redeem
+buy_sell   : "FRESH"=New folio  "ADDITIONAL"=Existing folio
+demat      : "P"=Physical  "D"=Demat
+
+Response (200):
+  {
+    "transaction_details": [
+      {
+        "trxn_order_id": "ORD123456",
+        "client_code": "LVMF00001",
+        "scheme_code": "INF204K01I28",
+        "order_amount": "5000",
+        "trxn_status": "0",
+        "trxn_remark": "Order Accepted",
+        "folio_no": "12345678"
+      }
+    ]
+  }
+
+Error (403):
+  {
+    "detail": {
+      "code": "NSE_REGISTRATION_REQUIRED",
+      "message": "No verified NSE client code found."
+    }
+  }
+
+
+================================================================================
+API 9 — SIP REGISTER
+================================================================================
+
+POST /mf/sip/register
+Authorization: Bearer <nse_token>
+
+NOTE: Do NOT send client_code / euin_number / euin_declaration
+
+Request:
+  {
+    "reg_data": [
+      {
+        "amc_code": "MF001",
+        "sch_code": "INF204K01I28",
+        "trans_mode": "D",
+        "dp_txn_mode": "P",
+        "start_date": "10/01/2026",
+        "frequency_type": "MONTHLY",
+        "frequency_allowed": "1",
+        "installment_amount": "1000",
+        "installment_no": "120",
+        "sip_mandate_id": "MANDATE001",
+        "first_order_today": "Y",
+        "primary_holder_mobile": "9999999999",
+        "primary_holder_email": "customer@example.com",
+        "folio_no": ""
+      }
+    ]
+  }
+
+frequency_type: "MONTHLY" "QUARTERLY" "WEEKLY" "DAILY" "FORTNIGHTLY"
+trans_mode    : "D"=Demat  "P"=Physical
+first_order   : "Y"=place first installment today  "N"=start from start_date
+
+Response (200):
+  {
+    "reg_data": [
+      {
+        "client_code": "LVMF00001",
+        "sch_code": "INF204K01I28",
+        "start_date": "10/01/2026",
+        "installment_amount": "1000",
+        "trxn_status": "0",
+        "trxn_remark": "SIP Registered",
+        "sip_reg_no": "SIP123456"
+      }
+    ]
+  }
+
+
+================================================================================
+API 10 — XSIP REGISTER (Mandate-based SIP)
+================================================================================
+
+POST /mf/xsip/register
+Authorization: Bearer <nse_token>
+
+NOTE: Do NOT send client_code / euin_number / euin_declaration
+
+Request:
+  {
+    "reg_data": [
+      {
+        "amc_code": "MF001",
+        "sch_code": "INF204K01I28",
+        "trans_mode": "D",
+        "dp_txn_mode": "P",
+        "start_date": "10/01/2026",
+        "frequency_type": "MONTHLY",
+        "frequency_allowed": "1",
+        "installment_amount": "1000",
+        "installment_no": "120",
+        "xsip_mandate_id": "XMANDATE001",
+        "first_order_today": "Y",
+        "primary_holder_mobile": "9999999999",
+        "primary_holder_email": "customer@example.com",
+        "folio_no": ""
+      }
+    ]
+  }
+
+Response (200):
+  {
+    "reg_data": [
+      {
+        "client_code": "LVMF00001",
+        "sch_code": "INF204K01I28",
+        "trxn_status": "0",
+        "trxn_remark": "XSIP Registered",
+        "xsip_reg_no": "XSIP123456"
+      }
+    ]
+  }
+
+
+================================================================================
+API 11 — PURCHASE PAYMENT
+================================================================================
+
+POST /mf/payments/purchase
+Authorization: Bearer <nse_token>
+
+NOTE: client_code is optional — auto-injected from session if not sent
+
+Request (UPI):
+  {
+    "payment_mode": "UPI",
+    "order_ids": "ORD123456",
+    "vpa": "customer@upi",
+    "callback_url": "https://yourapp.com/payment/callback"
+  }
+
+Request (Net Banking):
+  {
+    "payment_mode": "NET",
+    "order_ids": "ORD123456",
+    "bank_account_no": "1234567890",
+    "ifsc": "HDFC0001234"
+  }
+
+Request (Mandate):
+  {
+    "payment_mode": "MANDATE",
+    "order_ids": "ORD123456",
+    "mandate_id": "MANDATE001"
+  }
+
+Request (Cheque):
+  {
+    "payment_mode": "CHEQUE",
+    "order_ids": "ORD123456",
+    "cheque_no": "123456",
+    "cheque_date": "01/01/2026"
+  }
+
+Request (NEFT):
+  {
+    "payment_mode": "NEFT",
+    "order_ids": "ORD123456",
+    "neft_rtgs_utr_no": "UTR123456"
+  }
+
+payment_mode values:
+  "UPI"     → vpa required
+  "NET"     → bank_account_no + ifsc required
+  "MANDATE" → mandate_id required
+  "CHEQUE"  → cheque_no + cheque_date required
+  "NEFT"    → neft_rtgs_utr_no required
+
+Response (200):
+  {
+    "payment_mode": "UPI",
+    "client_code": "LVMF00001",
+    "order_ids": "ORD123456",
+    "status": "0",
+    "short_url": "https://pay.upi/xyz",
+    "basket_id": "BASKET001",
+    "remark": "Payment initiated"
+  }
+
+Errors:
+  403 NSE_REGISTRATION_REQUIRED → UCC not done
+  403 → order_ids don't belong to this customer
+
+
+================================================================================
+API 12 — UPI PAYMENT STATUS
+================================================================================
+
+POST /mf/payments/upi-status
+Authorization: Bearer <nse_token>
+
+Request:
+  {
+    "nse_upi_ref_no": "NSE_UPI_REF_123",
+    "client_code": "LVMF00001"
+  }
+
+Response (200):
+  {
+    "nse_upi_ref_no": "NSE_UPI_REF_123",
+    "client_code": "LVMF00001",
+    "vpa": "customer@upi",
+    "status": "SUCCESS",
+    "order_amount": "5000",
+    "upi_tran_ref_id": "TXN123456",
+    "cust_ref_no": "CUST123456",
+    "remark": "Payment successful"
+  }
+
+
+================================================================================
+ERROR CODES
+================================================================================
+
+  HTTP  Code                       UI Action
+  ----  -------------------------  -------------------------------------------
+  400   -                          Show field validation error
+  401   -                          Token expired → redirect to login
+  403   NSE_REGISTRATION_REQUIRED  UCC not done → show registration form
+  403   MULTIPLE_CLIENT_CODES      Contact support
+  403   -                          Order/payment not owned by this customer
+  409   -                          Duplicate → check onboarding status
+  422   -                          Missing required field → show form error
+  500   -                          Server error → show retry
+  503   -                          NSE down → show "try again later"
+
+
+================================================================================
+COMPLETE CUSTOMER FLOW
+================================================================================
+
+  [API 1]  POST /auth/login
+              |
+              |-- nse_registered = false
+              |        |
+              |        v
+              |   [API 2]  GET /mf/onboarding/status
+              |        |
+              |        v
+              |   [API 3]  POST /mf/ucc/register  (Idempotency-Key required)
+              |        |
+              |        v
+              |   [API 2]  GET /mf/onboarding/status  (poll → "registered")
+              |
+              |-- nse_registered = true
+                       |
+                       v
+                  [API 5]  GET /customer/onboarding/status  (6-step tracker)
+                       |
+                       v
+                  [API 7]  GET /customer/schemes  (load scheme list)
+                       |
+                       v
+                  [API 8]  POST /mf/order/entry        (lumpsum)
+                  [API 9]  POST /mf/sip/register       (SIP)
+                  [API 10] POST /mf/xsip/register      (XSIP)
+                       |
+                       v
+                  [API 11] POST /mf/payments/purchase  (pay)
+                       |
+                       v
+                  [API 12] POST /mf/payments/upi-status (check payment)
+
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+  #   METHOD  ENDPOINT                        client_code     Auth
+  --  ------  ------------------------------  --------------  --------
+  1   POST    /auth/login                     N/A             None
+  2   GET     /mf/onboarding/status           auto            nse_token
+  3   POST    /mf/ucc/register                auto (LVMF###)  nse_token
+  4   GET     /customer/registration/status   auto            nse_token
+  5   GET     /customer/onboarding/status     auto            nse_token
+  6   GET     /ucc/fetch/{client_code}        in URL          nse_token
+  7   GET     /customer/schemes               N/A             nse_token
+  8   POST    /mf/order/entry                 auto-injected   nse_token
+  9   POST    /mf/sip/register                auto-injected   nse_token
+  10  POST    /mf/xsip/register               auto-injected   nse_token
+  11  POST    /mf/payments/purchase           auto-injected   nse_token
+  12  POST    /mf/payments/upi-status         required        nse_token
+
+================================================================================
+END OF DOCUMENT
+================================================================================
