@@ -14,7 +14,6 @@ from database import get_db
 from models.order import OrderTransaction
 from models.sso import CustomerUccAttempt, LendrixUserNseMapping
 from models.ucc import UCCRegistration
-from routers.misc_services import purchase_payment as submit_purchase_payment
 from routers.order import order_entry as submit_order
 from routers.sip import sip_register as submit_sip
 from routers.xsip import xsip_register as submit_xsip
@@ -384,13 +383,26 @@ async def customer_purchase_payment(
     sso_payload: dict = Depends(require_sso_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    # Auto-inject client_code from verified SSO session if not provided
+    if not payload.client_code:
+        client_codes = sso_payload.get("client_codes", [])
+        if not client_codes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "NSE_REGISTRATION_REQUIRED",
+                    "message": "No verified NSE client code found. Please complete NSE registration.",
+                },
+            )
+        payload.client_code = client_codes[0]
     assert_client_code_authorized(sso_payload, payload.client_code)
     await _assert_order_ids_authorized(
         _parse_order_ids(payload.order_ids),
         payload.client_code,
         db,
     )
-    return await submit_purchase_payment(payload)
+    from routers.misc_services import _post, NSE_PURCHASE_PAYMENT_URL
+    return await _post(NSE_PURCHASE_PAYMENT_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/payments/upi-status", response_model=UPIStatusCheckResponse)
