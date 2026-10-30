@@ -8,9 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.client_code import inject_client_code_and_euin, resolve_client_code, generate_client_code
+from auth.client_code import inject_client_code_and_euin, resolve_client_code, next_sequential_client_code
 from auth.sso_dependencies import assert_client_code_authorized, require_sso_auth
-from config import settings
 from database import get_db
 from models.order import OrderTransaction
 from models.sso import CustomerUccAttempt, LendrixUserNseMapping
@@ -138,8 +137,8 @@ async def customer_ucc_register(
     lendrix_uuid = sso_payload["sub"]
     idempotency_value = str(idempotency_key)
 
-    # Auto-generate a deterministic client code for this customer
-    generated_client_code = generate_client_code(settings.NSE_MEMBER_CODE, lendrix_uuid)
+    # Auto-generate a sequential LVMF##### client code for this customer
+    generated_client_code = await next_sequential_client_code(db)
     for record in payload.reg_details:
         record.client_code = generated_client_code
     request_data = payload.model_dump(mode="json")
@@ -182,7 +181,7 @@ async def customer_ucc_register(
         )
 
     try:
-        nse_response = await _submit_ucc_to_nse(payload)
+        nse_response = await _submit_ucc_to_nse(payload, db=db)
     except HTTPException as exc:
         attempt.status = "pending_confirmation"
         await db.commit()

@@ -9,6 +9,8 @@ from database import get_db
 
 bearer_scheme = HTTPBearer()
 
+_UCC_SUCCESS_STATUSES = {"REG_SUCCESS", "S"}
+
 
 def _decode_bearer(credentials: HTTPAuthorizationCredentials) -> dict:
     if not credentials or not credentials.credentials:
@@ -42,14 +44,21 @@ async def require_auth_payload(
     This ensures the client code is always current regardless of token age.
     """
     from models.sso import LendrixUserNseMapping
+    from models.ucc import UCCRegistration
 
     payload = _decode_bearer(credentials)
     lendrix_uuid = payload.get("lendrix_uuid") or payload.get("sub")
     if lendrix_uuid:
         result = await db.execute(
-            select(LendrixUserNseMapping.client_code).where(
+            select(LendrixUserNseMapping.client_code)
+            .join(
+                UCCRegistration,
+                UCCRegistration.client_code == LendrixUserNseMapping.client_code,
+            )
+            .where(
                 LendrixUserNseMapping.lendrix_uuid == lendrix_uuid,
                 LendrixUserNseMapping.is_active.is_(True),
+                UCCRegistration.reg_status.in_(_UCC_SUCCESS_STATUSES),
             )
         )
         payload["client_codes"] = [row[0] for row in result.fetchall()]

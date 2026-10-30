@@ -15,8 +15,32 @@ from database import get_db
 from config import settings
 from sqlalchemy import select
 from models.sso import LendrixUserNseMapping
+from models.ucc import UCCRegistration
 from auth.sso_session import verify_csrf_token
 from auth.sso_session import decode_sso_token, get_sso_token_from_request
+
+_UCC_SUCCESS_STATUSES = {"REG_SUCCESS", "S"}
+
+
+async def _fetch_verified_client_codes(lendrix_uuid: str, db: AsyncSession) -> list[str]:
+    """
+    Returns only client_codes that are:
+      1. actively mapped to this lendrix_uuid in lendrix_user_nse_mapping
+      2. have a successful UCC registration in ucc_registrations
+    """
+    result = await db.execute(
+        select(LendrixUserNseMapping.client_code)
+        .join(
+            UCCRegistration,
+            UCCRegistration.client_code == LendrixUserNseMapping.client_code,
+        )
+        .where(
+            LendrixUserNseMapping.lendrix_uuid == lendrix_uuid,
+            LendrixUserNseMapping.is_active.is_(True),
+            UCCRegistration.reg_status.in_(_UCC_SUCCESS_STATUSES),
+        )
+    )
+    return [row[0] for row in result.fetchall()]
 
 
 async def require_sso_auth(
@@ -38,10 +62,7 @@ async def require_sso_auth(
         payload = await decode_sso_token(sso_cookie, db)
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             verify_csrf_token(request)
-        result = await db.execute(select(LendrixUserNseMapping.client_code).where(
-            LendrixUserNseMapping.lendrix_uuid == payload["sub"],
-            LendrixUserNseMapping.is_active.is_(True)))
-        payload["client_codes"] = [row[0] for row in result.fetchall()]
+        payload["client_codes"] = await _fetch_verified_client_codes(payload["sub"], db)
         return payload
 
     # ── Fall back to nse_token Bearer header ──────────────────────────────────
@@ -66,11 +87,8 @@ async def require_sso_auth(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: missing subject",
             )
-        # Always re-query live client_codes from DB (token may be stale)
-        result = await db.execute(select(LendrixUserNseMapping.client_code).where(
-            LendrixUserNseMapping.lendrix_uuid == lendrix_uuid,
-            LendrixUserNseMapping.is_active.is_(True)))
-        payload["client_codes"] = [row[0] for row in result.fetchall()]
+        # Always re-query live client_codes from DB — only UCC-verified codes
+        payload["client_codes"] = await _fetch_verified_client_codes(lendrix_uuid, db)
         return payload
 
     raise HTTPException(
