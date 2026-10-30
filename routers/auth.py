@@ -14,7 +14,8 @@ from config import settings
 from database import get_db
 from models.sso import LendrixUserNseMapping, NseSsoSession
 from models.customer_profile import CustomerProfile
-from schemas.auth import LendrixLoginRequest, CustomerLoginResponse, NseMappingInfo
+from models.ucc import UCCRegistration
+from schemas.auth import LendrixLoginRequest, CustomerLoginResponse, NseMappingInfo, UCCDetails
 from http_client import get_nse_client
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,11 @@ async def login(payload: LendrixLoginRequest, db: AsyncSession = Depends(get_db)
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"Cannot reach Lendrix: {e}")
 
-    data = resp.json()
+    try:
+        data = resp.json() if resp.content else {}
+    except Exception:
+        logger.warning("Lendrix returned non-JSON body: status=%s body=%s", resp.status_code, resp.text[:200])
+        raise HTTPException(status_code=502, detail="Lendrix returned an unexpected response")
 
     if resp.status_code == 403:
         return CustomerLoginResponse(
@@ -73,10 +78,15 @@ async def login(payload: LendrixLoginRequest, db: AsyncSession = Depends(get_db)
             registration_status="registered" if client_codes else "unlinked",
         )
 
-    # Mint NSE JWT signed with JWT_SECRET — used as Bearer for all NSE endpoints
+    # Mint a user-scoped NSE JWT — embeds lendrix_uuid so it cannot be shared between users
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
     nse_token = jwt.encode(
-        {"sub": user.get("email", lendrix_uuid), "exp": expire},
+        {
+            "sub": lendrix_uuid or user.get("email"),
+            "lendrix_uuid": lendrix_uuid,
+            "client_codes": client_codes,
+            "exp": expire,
+        },
         settings.JWT_SECRET,
         algorithm="HS256",
     )
@@ -153,6 +163,46 @@ async def login(payload: LendrixLoginRequest, db: AsyncSession = Depends(get_db)
             logger.warning("Backend SSO auto-login failed for uuid=<redacted>")
 
     logger.info(f"Login successful: uuid=<redacted> nse_registered={nse_info.nse_registered}")
+
+    # Auto-fetch UCC details for all linked client codes
+    ucc_details = []
+    if client_codes:
+        try:
+            ucc_result = await db.execute(
+                select(UCCRegistration).where(UCCRegistration.client_code.in_(client_codes))
+            )
+            ucc_records = ucc_result.scalars().all()
+            ucc_details = [
+                UCCDetails(
+                    client_code=r.client_code,
+                    primary_holder_first_name=r.primary_holder_first_name,
+                    primary_holder_middle_name=r.primary_holder_middle_name,
+                    primary_holder_last_name=r.primary_holder_last_name,
+                    tax_status=r.tax_status,
+                    gender=r.gender,
+                    primary_holder_dob_incorporation=r.primary_holder_dob_incorporation,
+                    occupation_code=r.occupation_code,
+                    holding_nature=r.holding_nature,
+                    primary_holder_pan=r.primary_holder_pan,
+                    email=r.email,
+                    indian_mobile_no=r.indian_mobile_no,
+                    address_1=r.address_1,
+                    address_2=r.address_2,
+                    address_3=r.address_3,
+                    city=r.city,
+                    state=r.state,
+                    pincode=r.pincode,
+                    country=r.country,
+                    account_type_1=r.account_type_1,
+                    account_no_1=r.account_no_1,
+                    ifsc_code_1=r.ifsc_code_1,
+                    reg_status=r.reg_status,
+                )
+                for r in ucc_records
+            ]
+        except Exception:
+            logger.warning("Failed to fetch UCC details on login for uuid=<redacted>")
+
     return CustomerLoginResponse(
         success=True,
         message="Login successful",
@@ -162,6 +212,7 @@ async def login(payload: LendrixLoginRequest, db: AsyncSession = Depends(get_db)
         nse=nse_info,
         nse_token=nse_token,
         sso_token=sso_token,
+        ucc_details=ucc_details if ucc_details else None,
     )
 
 

@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,3 +17,10 @@ class CustomerRegistrationStatusResponse(BaseModel):
     ]
     client_codes: list[str]
     attempt_status: str | None
+    euin: str | None = None
+
+
+class MFOnboardingStatusResponse(BaseModel):
+    authenticated: Literal[True] = True
+    onboarding_complete: bool
+    steps: dict[str, Any]

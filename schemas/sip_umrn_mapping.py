@@ -6,6 +6,7 @@ class SIPUMRNMappingRequest(BaseModel):
     sip_reg_id: str
     umrn: str
     remark: Optional[str] = None
+    client_code: Optional[str] = None
 
 
 class SIPUMRNMappingResponse(BaseModel):

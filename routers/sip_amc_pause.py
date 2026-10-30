@@ -6,6 +6,7 @@ import logging
 
 from database import get_db
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from models.sip_amc_pause import SIPAmcPause
 from schemas.sip_amc_pause import (
@@ -22,9 +23,17 @@ NSE_SIP_AMC_PAUSE_REPORT_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/report
 
 
 @router.post("/pause", response_model=SIPAmcPauseResponse)
-async def sip_amc_pause(payload: SIPAmcPauseRequest, db: AsyncSession = Depends(get_db)):
+async def sip_amc_pause(payload: SIPAmcPauseRequest, db: AsyncSession = Depends(get_db), token_payload: dict = Depends(require_auth_payload)):
     if len(payload.pause_data) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 SIPs allowed per request")
+
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    for item in payload.pause_data:
+        if not item.client_code:
+            if not auto_code:
+                raise HTTPException(status_code=422, detail="client_code is required")
+            item.client_code = auto_code
+        assert_token_owns_client_code(token_payload, item.client_code)
 
     nse_payload = {"pause_data": [d.model_dump(exclude={"nse_remarks", "status_flag", "request_id"}) for d in payload.pause_data]}
 
@@ -60,8 +69,7 @@ async def sip_amc_pause(payload: SIPAmcPauseRequest, db: AsyncSession = Depends(
 
     pause_data = nse_response.get("pause_data", [])
     model_columns = {c.name for c in SIPAmcPause.__table__.columns}
-
-    # Merge request data with response data for DB storage
+    lendrix_uuid = token_payload.get("lendrix_uuid")
     req_map = {d.sip_reg_no: d.model_dump() for d in payload.pause_data if d.sip_reg_no}
 
     try:
@@ -73,6 +81,8 @@ async def sip_amc_pause(payload: SIPAmcPauseRequest, db: AsyncSession = Depends(
                 for k, v in merged.items()
                 if k in model_columns
             }
+            if lendrix_uuid:
+                db_data["lendrix_uuid"] = lendrix_uuid
             db.add(SIPAmcPause(**db_data))
 
         await db.commit()
@@ -86,8 +96,13 @@ async def sip_amc_pause(payload: SIPAmcPauseRequest, db: AsyncSession = Depends(
 
 
 @router.post("/report", response_model=SIPAmcPauseReportResponse)
-async def sip_amc_pause_report(payload: SIPAmcPauseReportRequest):
-    nse_payload = payload.model_dump()
+async def sip_amc_pause_report(payload: SIPAmcPauseReportRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
 
     logger.info(f"Sending to NSE URL: {NSE_SIP_AMC_PAUSE_REPORT_URL}")
 

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.order_status_report import OrderStatusRequest, OrderStatusResponse
 
@@ -46,12 +47,24 @@ async def _fetch_report(url: str, payload: OrderStatusRequest) -> dict:
 
 
 @router.post("/provisional-orders", response_model=OrderStatusResponse)
-async def provisional_orders(payload: OrderStatusRequest):
+async def provisional_orders(payload: OrderStatusRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_PROV_ORDERS_URL}")
     return await _fetch_report(NSE_PROV_ORDERS_URL, payload)
 
 
 @router.post("/order-status", response_model=OrderStatusResponse)
-async def order_status(payload: OrderStatusRequest):
+async def order_status(payload: OrderStatusRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_ORDER_STATUS_URL}")
     return await _fetch_report(NSE_ORDER_STATUS_URL, payload)

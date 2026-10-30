@@ -3,6 +3,7 @@ from typing import Optional, List
 
 
 class SWPModDetail(BaseModel):
+    client_code: Optional[str] = None
     sys_reg_no: Optional[str] = None
     primary_holder_email: Optional[str] = None
     primary_holder_mobile: Optional[str] = None

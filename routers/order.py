@@ -7,6 +7,7 @@ import logging
 
 from database import get_db
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from models.order import OrderTransaction
 from schemas.order import OrderEntryRequest, OrderEntryResponse
@@ -24,11 +25,19 @@ _SUCCESS_STATUSES = {"NEW", "VALID", "TRXN SUCCESS"}
 
 
 @router.post("/entry", response_model=OrderEntryResponse)
-async def order_entry(payload: OrderEntryRequest, db: AsyncSession = Depends(get_db)):
+async def order_entry(payload: OrderEntryRequest, db: AsyncSession = Depends(get_db), token_payload: dict = Depends(require_auth_payload)):
     if not payload.transaction_details:
         raise HTTPException(status_code=422, detail="transaction_details cannot be empty")
     if len(payload.transaction_details) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 orders allowed per request")
+
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    for txn in payload.transaction_details:
+        if not txn.client_code:
+            if not auto_code:
+                raise HTTPException(status_code=422, detail="client_code is required")
+            txn.client_code = auto_code
+        assert_token_owns_client_code(token_payload, txn.client_code)
 
     nse_payload = {
         "transaction_details": [
@@ -60,6 +69,7 @@ async def order_entry(payload: OrderEntryRequest, db: AsyncSession = Depends(get
 
     transaction_details = nse_response.get("transaction_details", [])
     saved, failed = 0, []
+    lendrix_uuid = token_payload.get("lendrix_uuid")
 
     try:
         for record in transaction_details:
@@ -76,6 +86,8 @@ async def order_entry(payload: OrderEntryRequest, db: AsyncSession = Depends(get
                 for k, v in record.items()
                 if k in _KNOWN_FIELDS
             }
+            if lendrix_uuid:
+                db_data["lendrix_uuid"] = lendrix_uuid
 
             if not trxn_order_id:
                 logger.warning("Skipped DB insert — trxn_order_id missing")

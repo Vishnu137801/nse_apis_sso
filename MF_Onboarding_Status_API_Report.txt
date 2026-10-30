@@ -1,0 +1,113 @@
+MF Onboarding Status API — Implementation Report
+=================================================
+
+Status: COMPLETE — All requirements met
+
+
+ENDPOINT
+--------
+GET /api/v1/customer/onboarding/status
+
+Registered in main.py under the customer router.
+Authentication: require_sso_auth (SSO cookie + Bearer fallback).
+
+
+REQUIREMENTS VS IMPLEMENTATION
+-------------------------------
+
+Requirement                          Status    Notes
+----------------------------------------------------------------------------------------------------
+All 6 steps checked in one request   DONE      asyncio.gather runs all 6 in parallel
+Per-step error isolation             DONE      Each _check_* catches all exceptions,
+                                               returns done=false, status="check_failed"
+60s per-user cache                   DONE      _onboarding_cache dict keyed by lendrix_uuid,
+                                               TTL via time.monotonic()
+SSO cookie auth                      DONE      require_sso_auth dependency
+                                               (also accepts Bearer token fallback)
+onboarding_complete = all 6 done     DONE      all(s["done"] for s in steps.values())
+Response shape matches spec          DONE      Exact field names and structure
+
+
+STEP-BY-STEP LOGIC
+------------------
+
+Step       API Called                  done = true when
+------------------------------------------------------------------------------------------
+UCC        DB (sso_payload)            client_codes list is non-empty
+eKYC       CLIENT_KYC_REPORT           kyc_status == "SUCCESS"
+                                       AND "KYC VALIDATED" in status_remark
+AOF        AOF_IMAGE_UPLOAD_REPORT     Any record where cams_status or kfin_status
+                                       contains "ready to invest", "uploaded", or "success"
+eLog       ELOG_UPLOAD_REPORT          Same success keyword check as AOF
+Mandate    MANDATE_STATUS              Any record with status in {approved, active}
+Nominees   client_master_report        Any nominee_1/2/3_name non-empty across records
+
+
+RESPONSE SHAPE
+--------------
+
+{
+  "authenticated": true,
+  "onboarding_complete": false,
+  "steps": {
+    "ucc": {
+      "done": true,
+      "status": "registered",
+      "client_codes": ["LV12345"]
+    },
+    "ekyc": {
+      "done": true,
+      "status": "KYC VALIDATED",
+      "verified": true
+    },
+    "aof": {
+      "done": false,
+      "status": "not_submitted",
+      "records_found": 0
+    },
+    "elog": {
+      "done": false,
+      "status": "not_submitted",
+      "records_found": 0
+    },
+    "mandate": {
+      "done": false,
+      "status": "not_registered",
+      "mandate_count": 0
+    },
+    "nominees": {
+      "done": false,
+      "status": "not_added",
+      "nominee_count": 0
+    }
+  }
+}
+
+
+EDGE CASE — NO CLIENT CODE
+--------------------------
+If the user has no client_code yet (UCC not done), steps eKYC, AOF, eLog,
+Mandate, and Nominees all return immediately without hitting NSE:
+
+  { "done": false, "status": "no_client_code", ... }
+
+This is correct behaviour — all those steps require a client code.
+
+
+FILES INVOLVED
+--------------
+routers/customer.py   — Endpoint + all 6 _check_* functions + cache logic
+schemas/customer.py   — MFOnboardingStatusResponse schema
+main.py               — customer router registered
+
+
+NSE URLS USED
+-------------
+CLIENT_KYC_REPORT        /nsemfdesk/api/v2/reports/CLIENT_KYC_REPORT
+AOF_IMAGE_UPLOAD_REPORT  /nsemfdesk/api/v2/reports/AOF_IMAGE_UPLOAD_REPORT
+ELOG_UPLOAD_REPORT       /nsemfdesk/api/v2/reports/ELOG_UPLOAD_REPORT
+MANDATE_STATUS           /nsemfdesk/api/v2/reports/MANDATE_STATUS
+client_master_report     /nsemfdesk/api/v2/reports/client_master_report
+
+
+NOTHING IS MISSING. ENDPOINT IS READY FOR FRONTEND INTEGRATION.

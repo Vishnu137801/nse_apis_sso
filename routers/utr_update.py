@@ -6,6 +6,7 @@ import logging
 
 from database import get_db
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from models.utr_update import UTRUpdate
 from schemas.utr_update import UTRUpdateRequest, UTRUpdateResponse
@@ -18,9 +19,14 @@ NSE_UTR_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/transaction/UTRUPDATE"
 
 
 @router.post("/update", response_model=UTRUpdateResponse)
-async def utr_update(payload: UTRUpdateRequest, db: AsyncSession = Depends(get_db)):
+async def utr_update(payload: UTRUpdateRequest, db: AsyncSession = Depends(get_db), token_payload: dict = Depends(require_auth_payload)):
     if len(payload.utr_details) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 records allowed per request")
+
+    for item in payload.utr_details:
+        if not item.client_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        assert_token_owns_client_code(token_payload, item.client_code)
 
     nse_payload = {
         "utr_details": [

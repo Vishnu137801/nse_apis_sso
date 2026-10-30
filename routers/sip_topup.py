@@ -6,6 +6,7 @@ import logging
 
 from database import get_db
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from models.sip_topup import SIPTopupRegistration
 from schemas.sip_topup import SIPTopupRequest, SIPTopupResponse
@@ -18,9 +19,17 @@ NSE_SIP_TOPUP_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/registration/prod
 
 
 @router.post("/register", response_model=SIPTopupResponse)
-async def sip_topup_register(payload: SIPTopupRequest, db: AsyncSession = Depends(get_db)):
+async def sip_topup_register(payload: SIPTopupRequest, db: AsyncSession = Depends(get_db), token_payload: dict = Depends(require_auth_payload)):
     if len(payload.reg_data) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 orders allowed per request")
+
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    for item in payload.reg_data:
+        if not item.client_code:
+            item.client_code = auto_code
+        if not item.client_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        assert_token_owns_client_code(token_payload, item.client_code)
 
     nse_payload = {
         "reg_data": [
@@ -61,6 +70,7 @@ async def sip_topup_register(payload: SIPTopupRequest, db: AsyncSession = Depend
 
     reg_data = nse_response.get("reg_data", [])
     model_columns = {c.name for c in SIPTopupRegistration.__table__.columns}
+    lendrix_uuid = token_payload.get("lendrix_uuid")
 
     try:
         for record in reg_data:
@@ -69,6 +79,8 @@ async def sip_topup_register(payload: SIPTopupRequest, db: AsyncSession = Depend
                 for k, v in record.items()
                 if k in model_columns
             }
+            if lendrix_uuid:
+                db_data["lendrix_uuid"] = lendrix_uuid
             db.add(SIPTopupRegistration(**db_data))
 
         await db.commit()

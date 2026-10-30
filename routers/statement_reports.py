@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.statement_reports import (
     RedemptionStatementRequest,
@@ -46,12 +47,24 @@ async def _fetch_report(url: str, payload: dict) -> dict:
 
 
 @router.post("/redemption-statement", response_model=StatementReportResponse)
-async def redemption_statement(payload: RedemptionStatementRequest):
+async def redemption_statement(payload: RedemptionStatementRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_REDEMPTION_STATEMENT_URL}")
     return await _fetch_report(NSE_REDEMPTION_STATEMENT_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/allotment-statement", response_model=StatementReportResponse)
-async def allotment_statement(payload: AllotmentStatementRequest):
+async def allotment_statement(payload: AllotmentStatementRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_ALLOTMENT_STATEMENT_URL}")
     return await _fetch_report(NSE_ALLOTMENT_STATEMENT_URL, payload.model_dump(exclude_none=True))

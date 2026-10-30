@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.mandate_status_report import MandateStatusReportRequest, MandateStatusReportResponse
 
@@ -15,7 +16,13 @@ NSE_MANDATE_STATUS_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/reports/MAND
 
 
 @router.post("/mandate-status", response_model=MandateStatusReportResponse)
-async def mandate_status_report(payload: MandateStatusReportRequest):
+async def mandate_status_report(payload: MandateStatusReportRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_MANDATE_STATUS_URL}")
 
     try:

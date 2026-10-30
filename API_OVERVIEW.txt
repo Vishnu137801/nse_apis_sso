@@ -1,0 +1,171 @@
+NSE MUTUAL FUND API — OVERVIEW
+================================
+
+ARCHITECTURE
+------------
+Browser/Frontend
+    |
+    v
+FastAPI (NSE APIs)
+    |
+    |---> Lendrix (https://registration.lendrixventech.com)
+    |---> NSE MF API (https://nsemfdesk...)
+    |---> Local PostgreSQL DB
+
+
+================================================================================
+1. AUTHENTICATION — POST /api/v1/auth/login
+================================================================================
+
+Request:
+  { "email": "...", "password": "..." }
+
+Flow:
+  1. Calls Lendrix /auth/login → gets lendrix_access_token + user object
+  2. Looks up NSE client_codes from local DB (lendrix_user_nse_mapping table)
+  3. Mints nse_token (local JWT signed with JWT_SECRET, HS256)
+  4. Upserts customer profile into customer_profiles table
+  5. Auto-establishes SSO session (if SSO_ENABLED=true):
+       → POST Lendrix /auth/sso/issue-code  (server-to-server)
+       → POST Lendrix /auth/sso/verify-code (server-to-server)
+       → Persists NseSsoSession in DB
+       → Returns sso_token
+
+Response:
+  {
+    "success": true,
+    "lendrix_access_token": "...",
+    "lendrix_refresh_token": "...",
+    "nse_token": "...",         <-- use this as Bearer for all NSE endpoints
+    "sso_token": "...",
+    "user": { ... },
+    "nse": {
+      "client_codes": [...],
+      "nse_registered": true/false,
+      "registration_status": "registered" | "unlinked"
+    }
+  }
+
+
+================================================================================
+2. TOKEN SUMMARY
+================================================================================
+
+  nse_token            Local JWT (JWT_SECRET, HS256)     Bearer for NSE endpoints
+  lendrix_access_token Lendrix's own token               For Lendrix API calls (frontend)
+  sso_token            SSO JWT (SSO_JWT_SECRET)           HttpOnly cookie for SSO session
+
+
+================================================================================
+3. NSE ENDPOINTS (all require Authorization: Bearer <nse_token>)
+================================================================================
+
+  UCC Registration
+    POST   /api/v1/ucc/register              Register investor with NSE
+    GET    /api/v1/ucc/fetch/{client_code}   Fetch UCC from local DB
+
+  Orders
+    POST   /api/v1/order/...                 Place/cancel MF purchase orders
+
+  SIP (Systematic Investment Plan)
+    POST   /api/v1/sip/...                   Create/cancel SIPs
+    POST   /api/v1/sip-topup/...             SIP top-up
+    POST   /api/v1/sip-amc-pause/...         Pause SIP
+
+  XSIP (Exchange SIP)
+    POST   /api/v1/xsip/...                  Create/cancel XSIPs
+
+  STP (Systematic Transfer Plan)
+    POST   /api/v1/stp/...                   Create/cancel/modify STPs
+
+  SWP (Systematic Withdrawal Plan)
+    POST   /api/v1/swp/...                   Create/cancel/modify SWPs
+
+  Switch
+    POST   /api/v1/switch/...                Fund switches
+
+  Mandate
+    POST   /api/v1/mandate/...               Bank mandate registration + image upload
+
+  FATCA
+    POST   /api/v1/fatca/...                 FATCA compliance registration
+
+  Reports
+    GET    /api/v1/order-status-report/...   Order status
+    GET    /api/v1/mandate-status-report/... Mandate status
+    GET    /api/v1/statement-reports/...     Account statements
+    GET    /api/v1/misc-reports/...          Miscellaneous reports
+
+  Uploads
+    POST   /api/v1/aof-image-upload/...      AOF image
+    POST   /api/v1/fatca-image-upload/...    FATCA image
+    POST   /api/v1/elog-upload/...           e-Log
+    POST   /api/v1/poa-upload/...            POA
+    POST   /api/v1/cancel-cheque-upload/...  Cancel cheque
+
+  Misc
+    POST   /api/v1/utr-update/...            UTR update
+    POST   /api/v1/sip-umrn-mapping/...      SIP UMRN mapping
+    POST   /api/v1/communication/...         Communication preferences
+    POST   /api/v1/member-fund-allocation/.. Member fund allocation
+    POST   /api/v1/redemption-payout/...     Redemption payout
+    POST   /api/v1/misc-services/...         Miscellaneous services
+
+NOTE: All NSE endpoints proxy to NSE's API using NSE credentials from config
+      (not the customer's token). The nse_token only authenticates the caller
+      to this FastAPI service.
+
+
+================================================================================
+4. SSO ENDPOINTS — /api/v1/auth/sso/*
+================================================================================
+
+  POST /api/v1/auth/sso/exchange
+    - Frontend sends one-time code
+    - Server redeems it with Lendrix server-to-server
+    - Sets HttpOnly cookie with sso_token
+    - Returns { investor_linked, csrf_token, client_codes }
+
+  GET  /api/v1/auth/sso/me
+    - Returns current SSO session info
+    - Re-queries DB so revoked mappings reflect immediately
+
+  POST /api/v1/auth/sso/logout
+    - Revokes session in DB
+    - Clears HttpOnly cookie
+    - CSRF double-submit protected
+
+
+================================================================================
+5. UTILITY ENDPOINTS
+================================================================================
+
+  GET  /health                     Health check — returns { "status": "ok" }
+  GET  /docs                       Swagger UI (auto pre-authorized with app token)
+  GET  /api/v1/auth/debug/outbound-ip   Diagnostic — shows outbound IP NSE sees
+
+
+================================================================================
+6. DATABASE TABLES
+================================================================================
+
+  customer_profiles          Stores Lendrix user details on login (upserted)
+  lendrix_user_nse_mapping   Maps Lendrix UUID → NSE client_code
+  nse_sso_sessions           Active SSO sessions (hashed JTI)
+  sso_session_revocations    Revoked SSO sessions
+  ucc_registrations          NSE UCC registration records
+
+
+================================================================================
+7. KEY CONFIGURATION (.env)
+================================================================================
+
+  JWT_SECRET                 Signs/verifies nse_token
+  JWT_EXPIRE_MINUTES         nse_token expiry
+  SSO_ENABLED                Enable/disable SSO auto-establishment
+  LENDRIX_SSO_SERVER_SECRET  Shared secret for server-to-server Lendrix calls
+  LENDRIX_SSO_VERIFY_URL     Lendrix verify-code endpoint URL
+  SSO_JWT_SECRET             Signs SSO session tokens
+  NSE_BASE_URL               NSE MF API base URL
+  NSE_PROXY                  Proxy for NSE API calls (if required)
+  ALLOWED_ORIGINS            CORS allowed origins

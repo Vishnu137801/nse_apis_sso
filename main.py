@@ -2,8 +2,6 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from datetime import datetime, timezone, timedelta
-from jose import jwt
 from contextlib import asynccontextmanager
 from database import engine, Base
 from auth.dependencies import require_auth
@@ -30,7 +28,7 @@ import models.stp_modification
 import models.swp_modification
 import models.sip_amc_pause
 import models.sso  # SSO mapping + revocation tables
-from routers import ucc, order, switch, xsip, sip_topup, sip, stp, swp, order_cancellation, sip_cancellation, xsip_cancellation, daily_xsip_cancellation, stp_cancellation, client_bank_detail, mandate_registration, mandate_image_upload, utr_update, sip_umrn_mapping, order_status_report, mandate_status_report, communication, fatca_registration, fatca_common, aof_image_upload, fatca_image_upload, elog_upload, poa_upload, cancel_cheque_upload, member_fund_allocation, redemption_payout, statement_reports, misc_reports, misc_services, stp_modification, swp_modification, sip_amc_pause, auth
+from routers import ucc, order, switch, xsip, sip_topup, sip, stp, swp, order_cancellation, sip_cancellation, xsip_cancellation, daily_xsip_cancellation, stp_cancellation, client_bank_detail, mandate_registration, mandate_image_upload, utr_update, sip_umrn_mapping, order_status_report, mandate_status_report, communication, fatca_registration, fatca_common, aof_image_upload, fatca_image_upload, elog_upload, poa_upload, cancel_cheque_upload, member_fund_allocation, redemption_payout, statement_reports, misc_reports, misc_services, stp_modification, swp_modification, sip_amc_pause, auth, customer
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -123,6 +121,7 @@ app.include_router(misc_services.router, prefix="/api/v1", dependencies=[Depends
 app.include_router(stp_modification.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
 app.include_router(swp_modification.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
 app.include_router(sip_amc_pause.router, prefix="/api/v1", dependencies=[Depends(require_auth)])
+app.include_router(customer.router, prefix="/api/v1")
 
 
 def custom_openapi():
@@ -156,13 +155,7 @@ app.openapi = custom_openapi
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui():
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
-    token = jwt.encode(
-        {"sub": settings.APP_USERNAME, "exp": expire},
-        settings.JWT_SECRET,
-        algorithm="HS256",
-    )
-    html = f"""
+    html = """
     <!DOCTYPE html>
     <html>
     <head>
@@ -175,15 +168,39 @@ async def custom_swagger_ui():
     <div id="swagger-ui"></div>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
     <script>
-        const ui = SwaggerUIBundle({{
+        const AUTO_AUTH_KEY = 'nse_swagger_token';
+
+        const ui = SwaggerUIBundle({
             url: "/openapi.json",
             dom_id: '#swagger-ui',
             presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
             layout: "BaseLayout",
-            onComplete: function() {{
-                ui.preauthorizeApiKey("BearerAuth", "{token}");
-            }}
-        }});
+            onComplete: function() {
+                const saved = localStorage.getItem(AUTO_AUTH_KEY);
+                if (saved) {
+                    ui.preauthorizeApiKey('BearerAuth', saved);
+                }
+            },
+            requestInterceptor: function(request) {
+                // After a successful login, extract nse_token and persist it
+                return request;
+            },
+            responseInterceptor: function(response) {
+                try {
+                    if (response.url && response.url.includes('/auth/login') && response.status === 200) {
+                        const body = typeof response.body === 'string'
+                            ? JSON.parse(response.body)
+                            : response.body;
+                        const token = body && body.nse_token;
+                        if (token) {
+                            localStorage.setItem(AUTO_AUTH_KEY, token);
+                            ui.preauthorizeApiKey('BearerAuth', token);
+                        }
+                    }
+                } catch(e) {}
+                return response;
+            }
+        });
     </script>
     </body>
     </html>

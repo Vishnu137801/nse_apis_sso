@@ -201,9 +201,21 @@ class UCCRegistrationRequest(BaseModel):
     reg_details: List[UCCDetail]
 
 
+class UCCClientCodeSuggestion(BaseModel):
+    client_code: str
+    lendrix_uuid: str
+    already_registered: bool
+
+
 class UCCRegistrationResponse(BaseModel):
     reg_details: Optional[List[UCCDetailResponse]] = None
     response_status: Optional[str] = None
     error_remark: Optional[str] = None
+    nse_token: Optional[str] = None  # refreshed token with new client_codes embedded
 
     model_config = {"extra": "allow"}
+
+
+class UCCFetchResponse(UCCDetailResponse):
+    """Flat response for GET /fetch/{client_code} — one record, no wrapping list."""
+    # lendrix_uuid is intentionally excluded — internal field, never sent to client

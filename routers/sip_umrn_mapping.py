@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.sip_umrn_mapping import SIPUMRNMappingRequest, SIPUMRNMappingResponse
 
@@ -15,7 +16,12 @@ NSE_SIP_UMRN_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/registration/SIPUM
 
 
 @router.post("/umrn-mapping", response_model=SIPUMRNMappingResponse)
-async def sip_umrn_mapping(payload: SIPUMRNMappingRequest):
+async def sip_umrn_mapping(payload: SIPUMRNMappingRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_SIP_UMRN_URL}")
 
     try:

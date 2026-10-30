@@ -8,13 +8,17 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.client_code import inject_client_code_and_euin, resolve_client_code, generate_client_code
 from auth.sso_dependencies import assert_client_code_authorized, require_sso_auth
+from config import settings
 from database import get_db
 from models.order import OrderTransaction
 from models.sso import CustomerUccAttempt, LendrixUserNseMapping
 from models.ucc import UCCRegistration
 from routers.misc_services import purchase_payment as submit_purchase_payment
 from routers.order import order_entry as submit_order
+from routers.sip import sip_register as submit_sip
+from routers.xsip import xsip_register as submit_xsip
 from routers.ucc import (
     _persist_ucc_response,
     _submit_ucc_to_nse,
@@ -28,7 +32,9 @@ from schemas.misc_services import (
 )
 from schemas.onboarding import OnboardingStatusResponse
 from schemas.order import OrderEntryRequest, OrderEntryResponse
+from schemas.sip import SIPRegistrationRequest, SIPRegistrationResponse
 from schemas.ucc import UCCRegistrationRequest, UCCRegistrationResponse
+from schemas.xsip import XSIPRegistrationRequest, XSIPRegistrationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -128,14 +134,14 @@ async def customer_ucc_register(
         raise HTTPException(status_code=422, detail="reg_details cannot be empty")
     if len(payload.reg_details) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 records allowed per request")
-    if any((record.client_code or "").strip() for record in payload.reg_details):
-        raise HTTPException(
-            status_code=400,
-            detail="Customer registration cannot specify an existing client_code",
-        )
 
     lendrix_uuid = sso_payload["sub"]
     idempotency_value = str(idempotency_key)
+
+    # Auto-generate a deterministic client code for this customer
+    generated_client_code = generate_client_code(settings.NSE_MEMBER_CODE, lendrix_uuid)
+    for record in payload.reg_details:
+        record.client_code = generated_client_code
     request_data = payload.model_dump(mode="json")
     fingerprint = hashlib.sha256(
         json.dumps(request_data, sort_keys=True, separators=(",", ":")).encode()
@@ -303,9 +309,48 @@ async def customer_order_entry(
     sso_payload: dict = Depends(require_sso_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    for transaction in payload.transaction_details:
-        assert_client_code_authorized(sso_payload, transaction.client_code)
-    return await submit_order(payload, db)
+    client_code = resolve_client_code(sso_payload)
+    items = inject_client_code_and_euin(
+        [d.model_dump(exclude_none=True) for d in payload.transaction_details],
+        client_code,
+    )
+    from schemas.order import OrderRequest
+    enforced = OrderEntryRequest(
+        transaction_details=[OrderRequest(**item) for item in items]
+    )
+    return await submit_order(enforced, db)
+
+
+@router.post("/sip/register", response_model=SIPRegistrationResponse)
+async def customer_sip_register(
+    payload: SIPRegistrationRequest,
+    sso_payload: dict = Depends(require_sso_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    client_code = resolve_client_code(sso_payload)
+    items = inject_client_code_and_euin(
+        [d.model_dump(exclude_none=True) for d in payload.reg_data],
+        client_code,
+    )
+    from schemas.sip import SIPDetail
+    enforced = SIPRegistrationRequest(reg_data=[SIPDetail(**item) for item in items])
+    return await submit_sip(enforced, db)
+
+
+@router.post("/xsip/register", response_model=XSIPRegistrationResponse)
+async def customer_xsip_register(
+    payload: XSIPRegistrationRequest,
+    sso_payload: dict = Depends(require_sso_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    client_code = resolve_client_code(sso_payload)
+    items = inject_client_code_and_euin(
+        [d.model_dump(exclude_none=True) for d in payload.reg_data],
+        client_code,
+    )
+    from schemas.xsip import XSIPDetail
+    enforced = XSIPRegistrationRequest(reg_data=[XSIPDetail(**item) for item in items])
+    return await submit_xsip(enforced, db)
 
 
 def _parse_order_ids(order_ids: str) -> list[str]:

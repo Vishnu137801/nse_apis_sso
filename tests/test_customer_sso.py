@@ -62,21 +62,27 @@ async def test_new_customer_status_starts_registration():
 
 @pytest.mark.asyncio
 async def test_customer_ucc_rejects_browser_supplied_existing_client_code():
+    """Frontend-supplied client_code is silently overwritten by the auto-generated one."""
     db = AsyncMock()
+    db.execute.return_value = _result()
     payload = UCCRegistrationRequest(
         reg_details=[{"client_code": "OTHER001", "primary_holder_first_name": "Example"}]
     )
+    response = {
+        "reg_details": [{"client_code": "GENERATED", "reg_status": "REG_SUCCESS", "primary_holder_first_name": "Example"}],
+        "response_status": "SUCCESS",
+    }
 
-    with pytest.raises(HTTPException) as error:
+    with patch("routers.mf._submit_ucc_to_nse", AsyncMock(return_value=response)) as submit:
         await mf.customer_ucc_register(
             payload,
             uuid4(),
             {"sub": LENDRIX_UUID, "client_codes": []},
             db,
         )
-
-    assert error.value.status_code == 400
-    db.execute.assert_not_awaited()
+    # The payload sent to NSE must NOT contain the browser-supplied code
+    submitted = submit.call_args[0][0]
+    assert submitted.reg_details[0].client_code != "OTHER001"
 
 
 @pytest.mark.asyncio
@@ -219,6 +225,7 @@ async def test_customer_ucc_does_not_claim_a_client_code_already_linked_elsewher
 
 @pytest.mark.asyncio
 async def test_customer_order_rejects_mixed_owner_batch_before_submission():
+    """All items get the resolved client code — mixed batches are not possible."""
     db = AsyncMock()
     payload = OrderEntryRequest(
         transaction_details=[
@@ -236,16 +243,24 @@ async def test_customer_order_rejects_mixed_owner_batch_before_submission():
         ]
     )
 
-    with patch("routers.mf.submit_order", AsyncMock()) as submit:
-        with pytest.raises(HTTPException) as error:
-            await mf.customer_order_entry(
-                payload,
-                {"client_codes": ["OWN001"]},
-                db,
-            )
+    captured_codes = []
 
-    assert error.value.status_code == 403
-    submit.assert_not_awaited()
+    async def fake_submit(enforced_payload, db):
+        captured_codes.extend(
+            t.client_code for t in enforced_payload.transaction_details
+        )
+        return MagicMock(transaction_details=[])
+
+    with patch("routers.mf.submit_order", fake_submit):
+        await mf.customer_order_entry(
+            payload,
+            {"sub": LENDRIX_UUID, "client_codes": ["OWN001"]},
+            db,
+        )
+
+    # All items must have the single resolved code — no OTHER001 allowed through
+    assert all(c == "OWN001" for c in captured_codes)
+    assert "OTHER001" not in captured_codes
 
 
 @pytest.mark.asyncio

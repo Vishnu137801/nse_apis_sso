@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.communication import GetLinkRequest, GetLinkResponse, ResendCommRequest, ResendCommResponse
 
@@ -42,12 +43,18 @@ async def _post(url: str, payload: dict) -> dict:
 
 
 @router.post("/get-link", response_model=GetLinkResponse)
-async def get_link(payload: GetLinkRequest):
+async def get_link(payload: GetLinkRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_GET_LINK_URL}")
     return await _post(NSE_GET_LINK_URL, payload.model_dump())
 
 
 @router.post("/resend", response_model=ResendCommResponse)
-async def resend_comm(payload: ResendCommRequest):
+async def resend_comm(payload: ResendCommRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_RESEND_COMM_URL}")
     return await _post(NSE_RESEND_COMM_URL, payload.model_dump())

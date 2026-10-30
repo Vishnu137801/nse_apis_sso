@@ -1,0 +1,5 @@
+STATUS: 500
+BODY: {"detail":"Internal server error"}
+
+FETCH STATUS: 500
+FETCH BODY: {"detail":"Internal server error"}

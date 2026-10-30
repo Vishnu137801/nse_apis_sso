@@ -68,6 +68,7 @@ class FATCACommonRegistration(Base):
     reg_remark = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    lendrix_uuid = Column(String(36), nullable=True, index=True)
 
     ubo_details = relationship("FATCACommonUBO", back_populates="registration", cascade="all, delete-orphan")
 

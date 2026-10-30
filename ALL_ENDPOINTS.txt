@@ -1,0 +1,239 @@
+ALL API ENDPOINTS
+=================
+BASE URL : /api/v1
+AUTH     : Bearer nse_token (from POST /api/v1/auth/login)
+SSO AUTH : SSO cookie or Bearer fallback  (/customer/* and /mf/*)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HEALTH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GET  /health
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AUTH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/auth/login
+GET  /api/v1/auth/debug/outbound-ip
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UCC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GET  /api/v1/ucc/suggest-client-code
+POST /api/v1/ucc/register
+GET  /api/v1/ucc/fetch/{client_code}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ORDER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/order/entry
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SWITCH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/switch/register
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+XSIP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/xsip/register
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/sip/register
+POST /api/v1/sip/umrn-mapping
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIP TOPUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/sip-topup/register
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/stp/register
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SWP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/swp/register
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANCELLATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/order-cancellation/cancel
+POST /api/v1/sip-cancellation/cancel
+POST /api/v1/xsip-cancellation/cancel
+POST /api/v1/daily-xsip-cancellation/cancel
+POST /api/v1/stp-cancellation/cancel
+POST /api/v1/cancellation/swp
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MODIFICATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/stp-modification/modify
+POST /api/v1/swp-modification/modify
+POST /api/v1/modification/sip
+POST /api/v1/modification/xsip
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIP AMC PAUSE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/sip-amc-pause/pause
+POST /api/v1/sip-amc-pause/report
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MANDATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/mandate/register
+POST /api/v1/mandate/image-upload
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLIENT BANK DETAIL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/client-bank-detail/update
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UTR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/utr/update
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMMUNICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/communication/get-link
+POST /api/v1/communication/resend
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FATCA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/fatca/upload
+POST /api/v1/fatca/common-upload
+POST /api/v1/fatca/image-upload
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE UPLOADS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/aof/image-upload
+POST /api/v1/elog/upload
+POST /api/v1/poa/upload
+POST /api/v1/cancel-cheque/upload
+POST /api/v1/nft/image-upload
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EKYC / KYC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/ekyc/register
+POST /api/v1/registration/kyc-fresh-register
+POST /api/v1/registration/sip-xsip-pause
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAYMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/payments/purchase
+POST /api/v1/payments/upi-status
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NFT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/nft/nominee
+POST /api/v1/nft/change-of-bank
+POST /api/v1/nft/change-of-dividend
+POST /api/v1/nft/change-of-broker
+POST /api/v1/nft/change-of-contact
+POST /api/v1/nft/consolidation-of-folio
+POST /api/v1/nft/change-of-bank-single
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ADMIN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/admin/change-api-secret
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REPORTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST /api/v1/reports/provisional-orders
+POST /api/v1/reports/order-status
+POST /api/v1/reports/mandate-status
+POST /api/v1/reports/redemption-payout
+POST /api/v1/reports/redemption-payout-non-demat
+POST /api/v1/reports/redemption-statement
+POST /api/v1/reports/allotment-statement
+POST /api/v1/reports/member-fund-allocation/order-wise
+POST /api/v1/reports/member-fund-allocation/age-wise
+POST /api/v1/reports/client-master
+POST /api/v1/reports/client-detail
+POST /api/v1/reports/client-kyc
+POST /api/v1/reports/order-lifecycle
+POST /api/v1/reports/transaction-detail
+POST /api/v1/reports/fatca
+POST /api/v1/reports/aof-image-upload
+POST /api/v1/reports/elog-upload
+POST /api/v1/reports/sip-registration
+POST /api/v1/reports/sip-cancellation
+POST /api/v1/reports/sip-installment-due
+POST /api/v1/reports/sip-topup
+POST /api/v1/reports/stepup-registration
+POST /api/v1/reports/xsip-registration
+POST /api/v1/reports/xsip-cancellation
+POST /api/v1/reports/xsip-installment-due
+POST /api/v1/reports/xsip-topup
+POST /api/v1/reports/stp-registration
+POST /api/v1/reports/stp-cancellation
+POST /api/v1/reports/stp-installment-due
+POST /api/v1/reports/swp-registration
+POST /api/v1/reports/swp-cancellation
+POST /api/v1/reports/swp-installment-due
+POST /api/v1/reports/master-download
+POST /api/v1/reports/securities-delivery-shortage
+POST /api/v1/reports/2fa
+POST /api/v1/reports/client-authorization
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CUSTOMER  (SSO auth)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GET  /api/v1/customer/schemes
+GET  /api/v1/customer/registration/status
+GET  /api/v1/customer/onboarding/status
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MF CUSTOMER  (SSO auth)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GET  /api/v1/mf/onboarding/status
+POST /api/v1/mf/ucc/register
+POST /api/v1/mf/order/entry
+POST /api/v1/mf/sip/register
+POST /api/v1/mf/xsip/register
+POST /api/v1/mf/payments/purchase
+POST /api/v1/mf/payments/upi-status
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOTAL: 83 endpoints
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

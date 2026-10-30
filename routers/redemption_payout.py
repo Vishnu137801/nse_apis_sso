@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.redemption_payout import RedemptionPayoutRequest, RedemptionPayoutResponse
 
@@ -46,12 +47,12 @@ async def _fetch_report(url: str, payload: RedemptionPayoutRequest) -> dict:
 
 
 @router.post("/redemption-payout", response_model=RedemptionPayoutResponse)
-async def redemption_payout(payload: RedemptionPayoutRequest):
+async def redemption_payout(payload: RedemptionPayoutRequest, _: dict = Depends(require_auth_payload)):
     logger.info(f"Sending to NSE URL: {NSE_REDEMPTION_PAYOUT_URL}")
     return await _fetch_report(NSE_REDEMPTION_PAYOUT_URL, payload)
 
 
 @router.post("/redemption-payout-non-demat", response_model=RedemptionPayoutResponse)
-async def redemption_payout_non_demat(payload: RedemptionPayoutRequest):
+async def redemption_payout_non_demat(payload: RedemptionPayoutRequest, _: dict = Depends(require_auth_payload)):
     logger.info(f"Sending to NSE URL: {NSE_REDEMPTION_PAYOUT_NON_DEMAT_URL}")
     return await _fetch_report(NSE_REDEMPTION_PAYOUT_NON_DEMAT_URL, payload)

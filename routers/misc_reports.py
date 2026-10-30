@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
 from http_client import get_nse_client
@@ -6,6 +6,7 @@ import logging
 import time
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.misc_reports import (
     SecuritiesDeliveryRequest,
@@ -117,25 +118,46 @@ async def client_authorization(payload: ClientAuthorizationRequest):
 
 
 @router.post("/client-detail", response_model=GenericReportResponse)
-async def client_detail_report(payload: ClientDetailReportRequest):
+async def client_detail_report(payload: ClientDetailReportRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_CLIENT_DETAIL_URL}")
     return await _fetch_report(NSE_CLIENT_DETAIL_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/order-lifecycle", response_model=GenericReportResponse)
-async def order_lifecycle(payload: OrderLifecycleRequest):
+async def order_lifecycle(payload: OrderLifecycleRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_ORDER_LIFECYCLE_URL}")
     return await _fetch_report(NSE_ORDER_LIFECYCLE_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/transaction-detail", response_model=GenericReportResponse)
-async def transaction_detail(payload: TransactionDetailRequest):
+async def transaction_detail(payload: TransactionDetailRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_TRANSACTION_DETAIL_URL}")
     return await _fetch_report(NSE_TRANSACTION_DETAIL_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/fatca", response_model=GenericReportResponse)
-async def fatca_report(payload: FATCAReportRequest):
+async def fatca_report(payload: FATCAReportRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_FATCA_REPORT_URL}")
     return await _fetch_report(NSE_FATCA_REPORT_URL, payload.model_dump(exclude_none=True))
 
@@ -383,6 +405,12 @@ async def master_download(payload: MasterDownloadRequest):
 
 
 @router.post("/client-kyc", response_model=GenericReportResponse)
-async def client_kyc_report(payload: ClientKYCReportRequest):
+async def client_kyc_report(payload: ClientKYCReportRequest, token_payload: dict = Depends(require_auth_payload)):
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
+        if not auto_code:
+            raise HTTPException(status_code=422, detail="client_code is required")
+        payload.client_code = auto_code
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_CLIENT_KYC_REPORT_URL}")
     return await _fetch_report(NSE_CLIENT_KYC_REPORT_URL, payload.model_dump(exclude_none=True))

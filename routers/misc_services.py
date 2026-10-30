@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from http_client import get_nse_client
 import logging
 
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from schemas.misc_services import (
     EKYCRegRequest, EKYCRegResponse,
@@ -90,19 +91,24 @@ async def upi_status_check(payload: UPIStatusCheckRequest):
 
 
 @router.post("/cancellation/swp", response_model=SWPCancellationResponse)
-async def swp_cancellation(payload: SWPCancellationRequest):
+async def swp_cancellation(payload: SWPCancellationRequest, token_payload: dict = Depends(require_auth_payload)):
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_SWP_CAN_URL}")
     return await _post(NSE_SWP_CAN_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/registration/sip-xsip-pause", response_model=SIPXSIPPauseResponse)
-async def sip_xsip_pause(payload: SIPXSIPPauseRequest):
+async def sip_xsip_pause(payload: SIPXSIPPauseRequest, token_payload: dict = Depends(require_auth_payload)):
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_XSIP_PAUSE_URL}")
     return await _post(NSE_XSIP_PAUSE_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/reports/client-master", response_model=ClientMasterReportResponse)
-async def client_master_report(payload: ClientMasterReportRequest):
+async def client_master_report(payload: ClientMasterReportRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        raise HTTPException(status_code=422, detail="client_code is required")
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_CLIENT_MASTER_REPORT_URL}")
     return await _post(NSE_CLIENT_MASTER_REPORT_URL, payload.model_dump(exclude_none=True))
 
@@ -162,13 +168,15 @@ async def nft_image_upload(payload: NFTImageUploadRequest):
 
 
 @router.post("/modification/sip", response_model=SIPModResponse)
-async def sip_modification(payload: SIPModRequest):
+async def sip_modification(payload: SIPModRequest, token_payload: dict = Depends(require_auth_payload)):
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_SIP_MOD_URL}")
     return await _post(NSE_SIP_MOD_URL, payload.model_dump(exclude_none=True))
 
 
 @router.post("/modification/xsip", response_model=SIPModResponse)
-async def xsip_modification(payload: SIPModRequest):
+async def xsip_modification(payload: SIPModRequest, token_payload: dict = Depends(require_auth_payload)):
+    assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_XSIP_MOD_URL}")
     return await _post(NSE_XSIP_MOD_URL, payload.model_dump(exclude_none=True))
 

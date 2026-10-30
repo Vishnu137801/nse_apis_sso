@@ -32,6 +32,9 @@ class Settings(BaseSettings):
 
     ALLOWED_ORIGINS: str = ""
 
+    # ── Distributor EUIN (assigned by AMFI) ───────────────────────────────────
+    NSE_DISTRIBUTOR_EUIN: str = "E656590"
+
     # ── SSO-specific settings (NEW — separate from all existing settings) ──────
     # URL of the Lendrix Node.js one-time code verification endpoint.
     # Example: https://registration.lendrixventech.com/auth/sso/verify-code

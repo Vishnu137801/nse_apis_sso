@@ -6,6 +6,7 @@ import logging
 
 from database import get_db
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from models.sip_cancellation import SIPCancellation
 from schemas.sip_cancellation import SIPCancellationRequest, SIPCancellationResponse
@@ -18,9 +19,17 @@ NSE_SIP_CAN_URL = f"{settings.NSE_BASE_URL}/nsemfdesk/api/v2/cancellation/SIP_CA
 
 
 @router.post("/cancel", response_model=SIPCancellationResponse)
-async def cancel_sip(payload: SIPCancellationRequest, db: AsyncSession = Depends(get_db)):
+async def cancel_sip(payload: SIPCancellationRequest, db: AsyncSession = Depends(get_db), token_payload: dict = Depends(require_auth_payload)):
     if len(payload.can_data) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 SIPs allowed per request")
+
+    auto_code = (token_payload.get("client_codes") or [None])[0]
+    for item in payload.can_data:
+        if not item.client_code:
+            if not auto_code:
+                raise HTTPException(status_code=422, detail="client_code is required")
+            item.client_code = auto_code
+        assert_token_owns_client_code(token_payload, item.client_code)
 
     nse_payload = {
         "can_data": [
@@ -62,6 +71,7 @@ async def cancel_sip(payload: SIPCancellationRequest, db: AsyncSession = Depends
     # NSE returns reg_data key in response (not can_data)
     can_data = nse_response.get("reg_data", [])
     model_columns = {c.name for c in SIPCancellation.__table__.columns}
+    lendrix_uuid = token_payload.get("lendrix_uuid")
 
     try:
         for record in can_data:
@@ -70,6 +80,8 @@ async def cancel_sip(payload: SIPCancellationRequest, db: AsyncSession = Depends
                 for k, v in record.items()
                 if k in model_columns
             }
+            if lendrix_uuid:
+                db_data["lendrix_uuid"] = lendrix_uuid
             db.add(SIPCancellation(**db_data))
 
         await db.commit()

@@ -24,28 +24,59 @@ async def require_sso_auth(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Validates the customer SSO session cookie.
-    Returns the decoded JWT payload containing:
-      sub          : lendrix_uuid
-      client_codes : list of authorized NSE client codes
-      jti          : session identifier (used for revocation)
-      exp          : expiry timestamp
+    Validates the customer identity via either:
+      1. SSO cookie (HttpOnly, set by /auth/sso/exchange or auto-login)
+      2. nse_token Bearer header (minted by /auth/login, signed with JWT_SECRET)
+    Returns a normalised payload with sub + client_codes.
     """
-    require_sso_enabled()
-    token = get_sso_token_from_request(request)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No SSO session. Please log in via Lendrix.",
-        )
-    payload = await decode_sso_token(token, db)
-    if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        verify_csrf_token(request)
-    result = await db.execute(select(LendrixUserNseMapping.client_code).where(
-        LendrixUserNseMapping.lendrix_uuid == payload["sub"],
-        LendrixUserNseMapping.is_active.is_(True)))
-    payload["client_codes"] = [row[0] for row in result.fetchall()]
-    return payload
+    from jose import JWTError, jwt as jose_jwt
+
+    # ── Try SSO cookie first ───────────────────────────────────────────────────
+    sso_cookie = get_sso_token_from_request(request)
+    if sso_cookie:
+        require_sso_enabled()
+        payload = await decode_sso_token(sso_cookie, db)
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            verify_csrf_token(request)
+        result = await db.execute(select(LendrixUserNseMapping.client_code).where(
+            LendrixUserNseMapping.lendrix_uuid == payload["sub"],
+            LendrixUserNseMapping.is_active.is_(True)))
+        payload["client_codes"] = [row[0] for row in result.fetchall()]
+        return payload
+
+    # ── Fall back to nse_token Bearer header ──────────────────────────────────
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            payload = jose_jwt.decode(
+                token,
+                settings.JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+        lendrix_uuid = payload.get("sub")
+        if not lendrix_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing subject",
+            )
+        # Always re-query live client_codes from DB (token may be stale)
+        result = await db.execute(select(LendrixUserNseMapping.client_code).where(
+            LendrixUserNseMapping.lendrix_uuid == lendrix_uuid,
+            LendrixUserNseMapping.is_active.is_(True)))
+        payload["client_codes"] = [row[0] for row in result.fetchall()]
+        return payload
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No SSO session. Please log in via Lendrix.",
+    )
 
 
 def require_sso_enabled():

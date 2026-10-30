@@ -1,0 +1,251 @@
+API VERIFICATION CHECKLIST
+==========================
+Registration Backend  —  http://localhost:5000
+Run each curl command and check the expected response.
+Replace <TOKEN> with a valid JWT access token from /auth/login.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. HEALTH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] GET /health
+    curl http://localhost:5000/health
+    EXPECT: { "status": "ok", "service": "lendrix-registration-backend" }
+
+[ ] GET /auth/health
+    curl http://localhost:5000/auth/health
+    EXPECT: { "status": "ok", "service": "auth-router" }
+
+[ ] GET /kyc/health
+    curl http://localhost:5000/kyc/health
+    EXPECT: { "status": "kyc router ok" }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. AUTH — REGISTRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] POST /auth/registration/send-otp
+    curl -X POST http://localhost:5000/auth/registration/send-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com"}'
+    EXPECT: 200 { "success": true } OR 429 if rate limited
+
+[ ] POST /auth/registration/verify-otp
+    curl -X POST http://localhost:5000/auth/registration/verify-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com","otp":"123456"}'
+    EXPECT: 200 { "success": true } OR 400 invalid otp
+
+[ ] POST /auth/register
+    curl -X POST http://localhost:5000/auth/register \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com","password":"Test@1234","name":"Test User"}'
+    EXPECT: 201 { "success": true } OR 409 already exists
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. AUTH — LOGIN / SESSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] POST /auth/login
+    curl -X POST http://localhost:5000/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com","password":"Test@1234"}'
+    EXPECT: 200 { "success": true, "accessToken": "...", "refreshToken": "..." }
+
+[ ] POST /auth/refresh-token
+    curl -X POST http://localhost:5000/auth/refresh-token \
+      -H "Content-Type: application/json" \
+      -d '{"refreshToken":"<REFRESH_TOKEN>"}'
+    EXPECT: 200 { "success": true, "accessToken": "..." }
+
+[ ] GET /auth/me
+    curl http://localhost:5000/auth/me \
+      -H "Authorization: Bearer <TOKEN>"
+    EXPECT: 200 { "success": true, "user": { ... } }
+
+[ ] POST /auth/logout
+    curl -X POST http://localhost:5000/auth/logout \
+      -H "Authorization: Bearer <TOKEN>"
+    EXPECT: 200 { "success": true }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. AUTH — CUSTOMER FORGOT PASSWORD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] POST /auth/customer/forgot-password/send-otp
+    curl -X POST http://localhost:5000/auth/customer/forgot-password/send-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com"}'
+    EXPECT: 200 { "success": true }
+
+[ ] POST /auth/customer/forgot-password/verify-otp
+    curl -X POST http://localhost:5000/auth/customer/forgot-password/verify-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com","otp":"123456"}'
+    EXPECT: 200 { "success": true, "resetToken": "..." } OR 400
+
+[ ] POST /auth/customer/forgot-password/reset
+    curl -X POST http://localhost:5000/auth/customer/forgot-password/reset \
+      -H "Content-Type: application/json" \
+      -d '{"resetToken":"<RESET_TOKEN>","newPassword":"NewPass@123"}'
+    EXPECT: 200 { "success": true }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. AUTH — ADMIN FORGOT PASSWORD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] POST /auth/admin/forgot-password/send-otp
+    curl -X POST http://localhost:5000/auth/admin/forgot-password/send-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"admin@example.com"}'
+    EXPECT: 200 { "success": true }
+
+[ ] POST /auth/admin/forgot-password/verify-otp
+    curl -X POST http://localhost:5000/auth/admin/forgot-password/verify-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"admin@example.com","otp":"123456"}'
+    EXPECT: 200 { "success": true, "resetToken": "..." } OR 400
+
+[ ] POST /auth/admin/forgot-password/reset
+    curl -X POST http://localhost:5000/auth/admin/forgot-password/reset \
+      -H "Content-Type: application/json" \
+      -d '{"resetToken":"<RESET_TOKEN>","newPassword":"NewPass@123"}'
+    EXPECT: 200 { "success": true }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. SSO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] POST /auth/sso/generate-code   (requires customer Bearer token)
+    curl -X POST http://localhost:5000/auth/sso/generate-code \
+      -H "Authorization: Bearer <TOKEN>"
+    EXPECT: 200 { "success": true, "code": "...", "expires_in": 60 }
+    EXPECT if no token: 401
+
+[ ] POST /auth/sso/verify-code   (requires service secret in Authorization)
+    curl -X POST http://localhost:5000/auth/sso/verify-code \
+      -H "Authorization: Bearer <SERVICE_SECRET>" \
+      -H "Content-Type: application/json" \
+      -d '{"code":"<SSO_CODE>"}'
+    EXPECT: 200 { "success": true, "customer": { "lendrix_uuid": "..." } }
+    EXPECT if bad code: 400 { "code": "INVALID_SSO_CODE" }
+    EXPECT if no secret: 401
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. KYC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] GET /kyc/progress
+    curl http://localhost:5000/kyc/progress \
+      -H "Authorization: Bearer <TOKEN>"
+    EXPECT: 200 { ... kyc progress fields ... }
+
+[ ] GET /kyc/my-documents
+    curl http://localhost:5000/kyc/my-documents \
+      -H "Authorization: Bearer <TOKEN>"
+    EXPECT: 200 { ... documents list ... }
+
+[ ] POST /kyc/pan
+    curl -X POST http://localhost:5000/kyc/pan \
+      -H "Authorization: Bearer <TOKEN>" \
+      -H "Content-Type: application/json" \
+      -d '{"pan":"ABCDE1234F","dob":"1990-01-01"}'
+    EXPECT: 200 { "success": true } OR 400 invalid PAN
+
+[ ] POST /kyc/bank-account
+    curl -X POST http://localhost:5000/kyc/bank-account \
+      -H "Authorization: Bearer <TOKEN>" \
+      -H "Content-Type: application/json" \
+      -d '{"accountNumber":"123456789","ifsc":"HDFC0001234"}'
+    EXPECT: 200 { "success": true }
+
+[ ] POST /kyc/digilocker/generate-url
+    curl -X POST http://localhost:5000/kyc/digilocker/generate-url \
+      -H "Authorization: Bearer <TOKEN>"
+    EXPECT: 200 { "url": "https://..." }
+
+[ ] POST /kyc/digilocker/kyc-details
+    curl -X POST http://localhost:5000/kyc/digilocker/kyc-details \
+      -H "Authorization: Bearer <TOKEN>" \
+      -H "Content-Type: application/json" \
+      -d '{"code":"<DIGILOCKER_CODE>"}'
+    EXPECT: 200 { ... aadhaar details ... }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. MF ONBOARDING STATUS  (TEST MOCK — local only)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] GET /api/v1/customer/onboarding/status  — default (partial)
+    curl "http://localhost:5000/api/v1/customer/onboarding/status"
+    EXPECT: { "authenticated": true, "onboarding_complete": false,
+              "steps": { "ucc": { "done": true }, "ekyc": { "done": true },
+                         "aof": { "done": false }, ... } }
+
+[ ] GET /api/v1/customer/onboarding/status?scenario=complete
+    curl "http://localhost:5000/api/v1/customer/onboarding/status?scenario=complete"
+    EXPECT: { "onboarding_complete": true, all steps "done": true }
+    FRONTEND: investor-details page should show green "Onboarding Complete" banner
+
+[ ] GET /api/v1/customer/onboarding/status?scenario=none
+    curl "http://localhost:5000/api/v1/customer/onboarding/status?scenario=none"
+    EXPECT: { "onboarding_complete": false, all steps "done": false }
+    FRONTEND: onboarding page should show step 1 (UCC) as active
+
+[ ] GET /api/v1/customer/onboarding/status?scenario=no_client_code
+    curl "http://localhost:5000/api/v1/customer/onboarding/status?scenario=no_client_code"
+    EXPECT: ucc done=false, all others status="no_client_code"
+    FRONTEND: onboarding page should show UCC as the only active step
+
+[ ] GET /api/v1/customer/onboarding/status?scenario=partial
+    curl "http://localhost:5000/api/v1/customer/onboarding/status?scenario=partial"
+    EXPECT: ucc+ekyc done=true, aof/elog/mandate/nominees done=false
+    FRONTEND: onboarding page should show AOF as the active step
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. FRONTEND ROUTES TO VERIFY IN BROWSER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Set VITE_NSE_API_BASE_URL=http://localhost:5000/api/v1 in .env
+then run: npm run dev
+
+[ ] http://localhost:8081/dashboard/mf/onboarding
+    scenario=none     -> step 1 (UCC) active, all others locked
+    scenario=partial  -> step 3 (AOF) active, UCC+eKYC green
+    scenario=complete -> redirects to /dashboard/mf/invest
+
+[ ] http://localhost:8081/dashboard/mf/investor-details
+    scenario=complete -> shows green banner + all 6 detail cards
+    scenario=partial  -> shows "Onboarding not complete" with Go to Onboarding button
+    scenario=none     -> shows "Onboarding not complete" with Go to Onboarding button
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HOW TO SWITCH SCENARIO WITHOUT RESTARTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The frontend calls /api/v1/customer/onboarding/status with no query param.
+To test a specific scenario, temporarily edit nseSsoSession.ts:
+
+  Change:  nseApiFetch('/customer/onboarding/status')
+  To:      nseApiFetch('/customer/onboarding/status?scenario=complete')
+
+Revert after testing.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLEANUP BEFORE PRODUCTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Delete  registration_backend/MF_ONBOARDING_TEST_ROUTE.js
+2. Remove the 3 TEST ONLY lines from registration_backend/index.js
+3. Revert .env:  VITE_NSE_API_BASE_URL=https://nse.lendrixventech.com/api/v1
+4. Revert nseSsoSession.ts if scenario param was added

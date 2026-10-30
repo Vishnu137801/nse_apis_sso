@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import httpx
 from http_client import get_nse_client
 import logging
 
 from database import get_db
 from auth.nse_auth import get_auth_headers
+from auth.dependencies import require_auth_payload
 from config import settings
 from models.fatca_common import FATCACommonRegistration, FATCACommonUBO
+from models.ucc import UCCRegistration
 from schemas.fatca_common import FATCACommonUploadRequest, FATCACommonUploadResponse
 
 logger = logging.getLogger(__name__)
@@ -21,9 +24,22 @@ UBO_COLUMNS = {c.name for c in FATCACommonUBO.__table__.columns} - {"id", "regis
 
 
 @router.post("/common-upload", response_model=FATCACommonUploadResponse)
-async def fatca_common_upload(payload: FATCACommonUploadRequest, db: AsyncSession = Depends(get_db)):
+async def fatca_common_upload(payload: FATCACommonUploadRequest, db: AsyncSession = Depends(get_db), token_payload: dict = Depends(require_auth_payload)):
     if len(payload.reg_details) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 FATCA records allowed per request")
+
+    lendrix_uuid = token_payload.get("lendrix_uuid")
+    if not lendrix_uuid:
+        raise HTTPException(status_code=403, detail="Token missing lendrix_uuid")
+    owned_pans_result = await db.execute(
+        select(UCCRegistration.primary_holder_pan).where(
+            UCCRegistration.lendrix_uuid == lendrix_uuid
+        )
+    )
+    owned_pans = {row[0] for row in owned_pans_result.fetchall() if row[0]}
+    for item in payload.reg_details:
+        if item.pan_rp and item.pan_rp not in owned_pans:
+            raise HTTPException(status_code=403, detail="Token is not authorized for this PAN")
 
     nse_payload = {
         "reg_details": [

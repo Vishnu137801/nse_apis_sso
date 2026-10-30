@@ -77,6 +77,48 @@ def test_kyc_alias_forwards_documented_keys_and_preserves_link():
     assert response.json()["link"] == "https://example.invalid/kyc"
 
 
+def test_master_download_returns_upstream_file_and_caches_scheme_catalogue(monkeypatch):
+    from routers import misc_reports
+
+    monkeypatch.setattr(misc_reports, "_master_download_cache", {})
+
+    content = b"SCHEME CODE|SCHEME NAME\nSCHEME1|Sample Scheme\n"
+    upstream_response = MagicMock(
+        status_code=200,
+        headers={"content-type": "text/plain; charset=utf-8"},
+    )
+    upstream_response.aclose = AsyncMock()
+
+    async def response_chunks():
+        yield content[:20]
+        yield content[20:]
+
+    upstream_response.aiter_bytes = lambda: response_chunks()
+    upstream = MagicMock()
+    upstream.build_request.return_value = object()
+    upstream.send = AsyncMock(return_value=upstream_response)
+    upstream.aclose = AsyncMock()
+    app = FastAPI()
+    app.include_router(misc_reports.router)
+
+    with patch("routers.misc_reports.get_nse_client", return_value=upstream), patch(
+        "routers.misc_reports.get_auth_headers", return_value={}
+    ), TestClient(app) as client:
+        first_response = client.post("/reports/master-download", json={"file_type": "SCH"})
+        cached_response = client.post("/reports/master-download", json={"file_type": "SCH"})
+
+    assert first_response.status_code == 200
+    assert first_response.content == content
+    assert first_response.headers["content-type"].startswith("text/plain")
+    assert first_response.headers["x-master-cache"] == "MISS"
+    assert cached_response.status_code == 200
+    assert cached_response.content == content
+    assert cached_response.headers["x-master-cache"] == "HIT"
+    upstream.send.assert_awaited_once_with(upstream.build_request.return_value, stream=True)
+    upstream_response.aclose.assert_awaited_once()
+    upstream.aclose.assert_awaited_once()
+
+
 @pytest.mark.parametrize("constant,suffix", [
     ("NSE_2FA_URL", "/reports/2FA"),
     ("NSE_CLIENT_AUTH_URL", "/reports/CLIENT_AUTHORIZATION"),

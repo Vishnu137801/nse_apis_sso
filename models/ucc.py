@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Integer, Text, DateTime
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from database import Base
 
@@ -187,3 +188,4 @@ class UCCRegistration(Base):
     reg_remark = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    lendrix_uuid = Column(UUID(as_uuid=False), nullable=True, index=True)
