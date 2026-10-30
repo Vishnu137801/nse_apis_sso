@@ -6,7 +6,7 @@ class OrderRequest(BaseModel):
     scheme_code: str
     trxn_type: str
     buy_sell_type: str
-    client_code: str
+    client_code: Optional[str] = None
     demat_physical: str
     order_amount: str
     kyc_flag: str
@@ -27,10 +27,6 @@ class OrderRequest(BaseModel):
     email: Optional[str] = None
     mandate_id: Optional[str] = None
     filler1: Optional[str] = None
-    trxn_order_id: Optional[str] = None
-    trxn_status: Optional[str] = None
-    trxn_remark: Optional[str] = None
-    member_unique_id: Optional[str] = None
 
     @field_validator("scheme_code")
     @classmethod
