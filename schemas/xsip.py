@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, constr
 from typing import Optional, List
 
 
@@ -13,6 +13,8 @@ class XSIPDetail(BaseModel):
     frequency_type: Optional[str] = None
     frequency_allowed: Optional[str] = None
     installment_amount: Optional[str] = None
+    status: Optional[str] = None
+    member_code: Optional[str] = None
     folio_no: Optional[str] = None
     sip_remarks: Optional[str] = None
     installment_no: Optional[str] = None
@@ -40,11 +42,24 @@ class XSIPDetail(BaseModel):
     filler_5: Optional[str] = None
 
 
+class XSIPRegistrationDetail(XSIPDetail):
+    status: constr(strip_whitespace=True, min_length=1, max_length=1)
+
+
 class XSIPRegistrationRequest(BaseModel):
-    reg_data: List[XSIPDetail]
+    reg_data: List[XSIPRegistrationDetail]
+
+
+class XSIPRegistrationResult(XSIPDetail):
+    reg_id: Optional[str] = None
+    reg_status: Optional[str] = None
+    reg_remark: Optional[str] = None
+    member_unique_id: Optional[str] = None
+
+    model_config = {"extra": "allow"}
 
 
 class XSIPRegistrationResponse(BaseModel):
-    reg_data: Optional[List[XSIPDetail]] = None
+    reg_data: Optional[List[XSIPRegistrationResult]] = None
 
     model_config = {"extra": "allow"}

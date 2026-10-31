@@ -7,6 +7,59 @@ from pydantic import ValidationError
 import pytest
 
 
+@pytest.mark.parametrize("status", [None, "", " "])
+def test_xsip_registration_requires_nonblank_status(status):
+    from schemas.xsip import XSIPRegistrationRequest
+
+    item = {"client_code": "TEST001"}
+    if status is not None:
+        item["status"] = status
+    with pytest.raises(ValidationError):
+        XSIPRegistrationRequest.model_validate({"reg_data": [item]})
+
+
+def test_xsip_forwards_status_and_member_code():
+    from auth.dependencies import require_auth_payload
+    from database import get_db
+    from routers import xsip
+
+    db = AsyncMock()
+    db.add = MagicMock()
+
+    async def fake_db():
+        yield db
+
+    app = FastAPI()
+    app.include_router(xsip.router)
+    app.dependency_overrides[get_db] = fake_db
+    app.dependency_overrides[require_auth_payload] = lambda: {"client_codes": ["TEST001"]}
+    body = {"reg_data": [{"client_code": "TEST001", "status": "N", "member_code": "1003338"}]}
+    upstream = AsyncMock()
+    upstream.__aenter__.return_value = upstream
+    response = MagicMock(status_code=200)
+    upstream_body = {"reg_data": [{
+        **body["reg_data"][0],
+        "reg_id": "0", "reg_status": "REG_FAILED",
+        "reg_remark": "NSE validation failure", "member_unique_id": "1003338",
+        "additional_result": "preserved",
+    }]}
+    response.json.return_value = upstream_body
+    upstream.post.return_value = response
+    with patch("routers.xsip.get_nse_client", return_value=upstream), patch(
+        "routers.xsip.get_auth_headers", return_value={}
+    ), TestClient(app) as client:
+        result = client.post("/xsip/register", json=body)
+    assert result.status_code == 200
+    assert upstream.post.call_args.kwargs["json"] == body
+    assert result.json()["reg_data"][0]["status"] == "N"
+    for key, value in upstream_body["reg_data"][0].items():
+        assert result.json()["reg_data"][0][key] == value
+    saved = db.add.call_args.args[0]
+    assert saved.status == "N"
+    assert saved.member_code == "1003338"
+    db.commit.assert_awaited_once()
+
+
 @pytest.mark.parametrize("endpoint", ["get-link", "resend"])
 @pytest.mark.parametrize("client_codes,requested_code,expected_status", [
     (["TEST001"], None, 200),
