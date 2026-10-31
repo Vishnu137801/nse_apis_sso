@@ -11,7 +11,7 @@ from auth.nse_auth import get_auth_headers
 from auth.dependencies import require_auth_payload, assert_token_owns_client_code
 from config import settings
 from models.sip import SIPRegistration
-from schemas.sip import SIPRegistrationRequest, SIPRegistrationResponse, SIPDetail
+from schemas.sip import SIPRegistrationRequest, SIPRegistrationResponse, SIPDetail, SIPRegistrationResult
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,7 @@ async def get_sip_registrations(client_code: str, db: AsyncSession = Depends(get
         raise HTTPException(status_code=404, detail=f"No SIP registrations found for client_code: {client_code}")
 
     reg_data = [
-        SIPDetail(
+        SIPRegistrationResult(
             amc_code=r.amc_code,
             sch_code=r.sch_code,
             client_code=r.client_code,
@@ -237,6 +237,10 @@ async def get_sip_registrations(client_code: str, db: AsyncSession = Depends(get
             filler_3=r.filler_3,
             filler_4=r.filler_4,
             filler_5=r.filler_5,
+            reg_id=r.reg_id,
+            reg_status=r.reg_status,
+            reg_remark=r.reg_remark,
+            member_unique_id=r.member_unique_id,
         )
         for r in records
     ]
