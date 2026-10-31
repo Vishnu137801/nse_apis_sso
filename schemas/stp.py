@@ -18,6 +18,18 @@ class STPDetail(BaseModel):
     folio_no: Optional[str] = None
     internal_ref_number: Optional[str] = None
     start_date: Optional[str] = None
+
+    @field_validator("start_date")
+    @classmethod
+    def validate_start_date(cls, v):
+        if v:
+            try:
+                day = int(v.split("/")[0])
+            except (ValueError, IndexError):
+                raise ValueError("start_date must be in DD/MM/YYYY format")
+            if day not in (1, 7, 14, 21):
+                raise ValueError("Day of start_date must be 1, 7, 14, or 21")
+        return v
     frequency_type: Optional[str] = None
     no_of_transfers: Optional[str] = None
     to_date: Optional[str] = None
