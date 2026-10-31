@@ -10,6 +10,7 @@ class SIPDetail(BaseModel):
     trans_mode: Optional[str] = None
     dp_txn_mode: Optional[str] = None
     status: Optional[str] = None
+    member_code: Optional[str] = None
     start_date: Optional[str] = None
     frequency_type: Optional[str] = None
     frequency_allowed: Optional[str] = None
