@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
@@ -78,6 +80,11 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=600,
 )
+
+
+@app.exception_handler(HTTPException)
+async def passthrough_http_exception_handler(request: Request, exc: HTTPException):
+    return await http_exception_handler(request, exc)
 
 
 @app.exception_handler(Exception)

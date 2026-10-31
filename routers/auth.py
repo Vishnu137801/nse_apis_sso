@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 import logging
 import uuid
+import hashlib
 import httpx
 from datetime import datetime, timezone, timedelta
 from jose import jwt
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.nse_auth import get_auth_headers
@@ -22,40 +24,72 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+# In-process cache: cache_key -> {"data": <lendrix response dict>, "expires_at": datetime}
+_lendrix_token_cache: dict = {}
+
+
+def _cache_key(email: str, password: str) -> str:
+    return hashlib.sha256(f"{email}:{password}".encode()).hexdigest()
+
+
+def _get_cached(email: str, password: str) -> dict | None:
+    entry = _lendrix_token_cache.get(_cache_key(email, password))
+    if entry and entry["expires_at"] > datetime.now(timezone.utc):
+        return entry["data"]
+    return None
+
+
+def _set_cache(email: str, password: str, data: dict, ttl_seconds: int = 3300) -> None:
+    _lendrix_token_cache[_cache_key(email, password)] = {
+        "data": data,
+        "expires_at": datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
+    }
+
 
 @router.post("/login", response_model=CustomerLoginResponse)
 async def login(payload: LendrixLoginRequest, db: AsyncSession = Depends(get_db)):
     """Login via Lendrix, establish NSE SSO session automatically in the backend."""
-    try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.post(
-                "https://registration.lendrixventech.com/auth/login",
-                json={"email": payload.email, "password": payload.password},
-                headers={"Content-Type": "application/json"},
+    # Return cached Lendrix tokens if still valid — avoids hitting rate limits
+    cached = _get_cached(payload.email, payload.password)
+    if cached:
+        logger.info("Serving login from cache for email=<redacted>")
+        data = cached
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.post(
+                    "https://registration.lendrixventech.com/auth/login",
+                    json={"email": payload.email, "password": payload.password},
+                    headers={"Content-Type": "application/json"},
+                )
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Lendrix login timed out")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Cannot reach Lendrix: {e}")
+
+        if resp.status_code == 429:
+            raise HTTPException(status_code=429, detail="Too many login attempts. Please wait before trying again.")
+
+        try:
+            data = resp.json() if resp.content else {}
+        except Exception:
+            logger.warning("Lendrix returned non-JSON body: status=%s body=%s", resp.status_code, resp.text[:200])
+            raise HTTPException(status_code=502, detail="Lendrix returned an unexpected response")
+
+        if resp.status_code == 403:
+            return CustomerLoginResponse(
+                success=False,
+                message=data.get("message", "Access denied"),
+                code=data.get("code"),
+                lendrix_access_token=data.get("access_token"),
+                lendrix_refresh_token=data.get("refresh_token"),
+                user=data.get("user"),
+                resumeKyc=data.get("resumeKyc"),
             )
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Lendrix login timed out")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Cannot reach Lendrix: {e}")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=data.get("message", "Login failed"))
 
-    try:
-        data = resp.json() if resp.content else {}
-    except Exception:
-        logger.warning("Lendrix returned non-JSON body: status=%s body=%s", resp.status_code, resp.text[:200])
-        raise HTTPException(status_code=502, detail="Lendrix returned an unexpected response")
-
-    if resp.status_code == 403:
-        return CustomerLoginResponse(
-            success=False,
-            message=data.get("message", "Access denied"),
-            code=data.get("code"),
-            lendrix_access_token=data.get("access_token"),
-            lendrix_refresh_token=data.get("refresh_token"),
-            user=data.get("user"),
-            resumeKyc=data.get("resumeKyc"),
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=data.get("message", "Login failed"))
+        _set_cache(payload.email, payload.password, data)
 
     user = data.get("user", {})
     lendrix_uuid = user.get("id")
@@ -64,19 +98,27 @@ async def login(payload: LendrixLoginRequest, db: AsyncSession = Depends(get_db)
     nse_info = NseMappingInfo()
     client_codes = []
     if lendrix_uuid:
-        mapping_result = await db.execute(
-            select(LendrixUserNseMapping.client_code)
-            .where(
-                LendrixUserNseMapping.lendrix_uuid == lendrix_uuid,
-                LendrixUserNseMapping.is_active.is_(True),
+        try:
+            mapping_result = await db.execute(
+                select(LendrixUserNseMapping.client_code)
+                .where(
+                    LendrixUserNseMapping.lendrix_uuid == lendrix_uuid,
+                    LendrixUserNseMapping.is_active.is_(True),
+                )
             )
-        )
-        client_codes = [row[0] for row in mapping_result.fetchall()]
-        nse_info = NseMappingInfo(
-            client_codes=client_codes,
-            nse_registered=len(client_codes) > 0,
-            registration_status="registered" if client_codes else "unlinked",
-        )
+            client_codes = [row[0] for row in mapping_result.fetchall()]
+            nse_info = NseMappingInfo(
+                client_codes=client_codes,
+                nse_registered=len(client_codes) > 0,
+                registration_status="registered" if client_codes else "unlinked",
+            )
+        except SQLAlchemyError:
+            logger.exception("DB failure fetching NSE client codes for uuid=<redacted>")
+            try:
+                await db.rollback()
+            except Exception:
+                logger.warning("Rollback failed after DB error — connection may already be closed")
+            raise HTTPException(status_code=503, detail="Authentication service temporarily unavailable.")
 
     # Mint a user-scoped NSE JWT — embeds lendrix_uuid so it cannot be shared between users
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
