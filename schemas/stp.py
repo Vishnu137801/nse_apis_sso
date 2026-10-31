@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 
 
@@ -7,6 +7,13 @@ class STPDetail(BaseModel):
     from_scheme_code: Optional[str] = None
     to_scheme_code: Optional[str] = None
     buy_sell_type: Optional[str] = None
+
+    @field_validator("buy_sell_type")
+    @classmethod
+    def validate_buy_sell_type(cls, v):
+        if v is not None and v.upper() != "ADDITIONAL":
+            raise ValueError("buy_sell_type must be 'ADDITIONAL' for STP")
+        return v.upper() if v else v
     transaction_mode: Optional[str] = None
     folio_no: Optional[str] = None
     internal_ref_number: Optional[str] = None
