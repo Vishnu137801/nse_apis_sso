@@ -1,10 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class GetLinkRequest(BaseModel):
     productType: str
     productRefId: str
+    client_code: Optional[str] = Field(default=None, exclude=True)
 
 
 class GetLinkResponse(BaseModel):
@@ -19,6 +20,7 @@ class GetLinkResponse(BaseModel):
 class ResendCommRequest(BaseModel):
     productType: str
     productRefId: str
+    client_code: Optional[str] = Field(default=None, exclude=True)
 
 
 class ResendCommResponse(BaseModel):

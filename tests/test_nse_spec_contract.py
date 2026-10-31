@@ -7,6 +7,36 @@ from pydantic import ValidationError
 import pytest
 
 
+@pytest.mark.parametrize("endpoint", ["get-link", "resend"])
+@pytest.mark.parametrize("client_codes,requested_code,expected_status", [
+    (["TEST001"], None, 200),
+    (["TEST001", "TEST002"], "TEST002", 200),
+    (["TEST001"], "OTHER", 403),
+    ([], None, 422),
+])
+def test_communication_client_scope(endpoint, client_codes, requested_code, expected_status):
+    from auth.dependencies import require_auth_payload
+    from routers import communication
+
+    app = FastAPI()
+    app.include_router(communication.router)
+    app.dependency_overrides[require_auth_payload] = lambda: {"client_codes": client_codes}
+    body = {"productType": "MANDATE_AUTH", "productRefId": "2026103113239"}
+    request_body = dict(body)
+    if requested_code is not None:
+        request_body["client_code"] = requested_code
+    post = AsyncMock(return_value=body)
+    with patch("routers.communication._post", post), TestClient(app) as client:
+        response = client.post(f"/communication/{endpoint}", json=request_body)
+    assert response.status_code == expected_status
+    if expected_status == 200:
+        expected_url = communication.NSE_GET_LINK_URL if endpoint == "get-link" else communication.NSE_RESEND_COMM_URL
+        post.assert_awaited_once_with(expected_url, body)
+        assert response.json()["productRefId"] == body["productRefId"]
+    else:
+        post.assert_not_awaited()
+
+
 def test_documented_order_success_is_persisted():
     """PDF pp. 9-10: TRXN SUCCESS is an accepted order-entry result."""
     from database import get_db

@@ -45,6 +45,8 @@ async def _post(url: str, payload: dict) -> dict:
 @router.post("/get-link", response_model=GetLinkResponse)
 async def get_link(payload: GetLinkRequest, token_payload: dict = Depends(require_auth_payload)):
     if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
+    if not payload.client_code:
         raise HTTPException(status_code=422, detail="client_code is required")
     assert_token_owns_client_code(token_payload, payload.client_code)
     logger.info(f"Sending to NSE URL: {NSE_GET_LINK_URL}")
@@ -53,6 +55,8 @@ async def get_link(payload: GetLinkRequest, token_payload: dict = Depends(requir
 
 @router.post("/resend", response_model=ResendCommResponse)
 async def resend_comm(payload: ResendCommRequest, token_payload: dict = Depends(require_auth_payload)):
+    if not payload.client_code:
+        payload.client_code = (token_payload.get("client_codes") or [None])[0]
     if not payload.client_code:
         raise HTTPException(status_code=422, detail="client_code is required")
     assert_token_owns_client_code(token_payload, payload.client_code)
