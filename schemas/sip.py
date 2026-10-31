@@ -9,6 +9,7 @@ class SIPDetail(BaseModel):
     internal_ref_no: Optional[str] = None
     trans_mode: Optional[str] = None
     dp_txn_mode: Optional[str] = None
+    status: Optional[str] = None
     start_date: Optional[str] = None
     frequency_type: Optional[str] = None
     frequency_allowed: Optional[str] = None
